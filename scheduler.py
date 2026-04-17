@@ -122,6 +122,10 @@ class ETFQuantBot:
         self.guard    = RiskGuard()
         self.notifier = Notifier()
 
+        # 성과 리포터
+        from reports.reporter import PerformanceReporter
+        self.reporter = PerformanceReporter(strategy_name)
+
         logger.info(
             f"ETF 퀀트봇 초기화 | 모드={broker_type.upper()} | "
             f"전략={strategy_name} | DryRun={dry_run}"
@@ -227,6 +231,10 @@ class ETFQuantBot:
                 f"MDD={risk_st['current_mdd']*100:.2f}% | "
                 f"손익={pnl_str}"
             )
+
+            # 일간 NAV 기록
+            self.reporter.record_daily(balance.total_assets)
+
             # 일일 하트비트: 봇이 살아있음을 텔레그램으로 확인
             self.notifier.send_daily_report(
                 total_assets   = balance.total_assets,
@@ -236,6 +244,12 @@ class ETFQuantBot:
                 strategy_name  = self.strategy_name,
                 is_halted      = risk_st["is_halted"],
             )
+
+            # 월말 마지막 영업일: 월간 성과 리포트 자동 전송
+            if self._is_last_business_day():
+                logger.info("월말 성과 리포트 전송")
+                self.notifier.send_text(self.reporter.monthly_report_text())
+
         except Exception as e:
             logger.error(f"마감 집계 실패: {e}")
 
@@ -275,6 +289,15 @@ class ETFQuantBot:
                 self.job_monthly_rebalance()
         except Exception as e:
             logger.warning(f"시작 처리 실패: {e}")
+
+        # 텔레그램 명령어 수신 시작
+        from telegram_handler import TelegramCommandHandler
+        cmd_handler = TelegramCommandHandler(self, self.notifier, self.reporter)
+        cmd_handler.start()
+
+        # 웹 대시보드 시작 (포트 8080)
+        from dashboard import start_dashboard
+        start_dashboard(self, port=8080)
 
         scheduler = BlockingScheduler(timezone=KST)
 
@@ -402,6 +425,14 @@ class ETFQuantBot:
 
         threading.Thread(target=_check, daemon=True).start()
         logger.info(f"미체결 확인 예약: {delay_sec}초 후")
+
+    def _is_last_business_day(self) -> bool:
+        """오늘이 이번 달 마지막 영업일인지 확인"""
+        today    = date.today()
+        tomorrow = today + timedelta(days=1)
+        while tomorrow.weekday() >= 5:   # 주말 건너뜀
+            tomorrow += timedelta(days=1)
+        return tomorrow.month != today.month
 
     def _make_reduced_strategy(self, reduce_ratio: float):
         """포지션 축소 전략: 원래 비중을 축소하고 나머지를 현금으로"""

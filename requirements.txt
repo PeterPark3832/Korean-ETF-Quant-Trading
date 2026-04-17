@@ -12,6 +12,10 @@ requests>=2.31.0
 # 스케줄러
 APScheduler>=3.10.0,<4.0.0
 
+# 웹 대시보드
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+
 # 유틸
 python-dotenv>=1.0.0
 loguru>=0.7.0
