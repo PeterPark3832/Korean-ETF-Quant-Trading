@@ -36,6 +36,22 @@ load_dotenv()
 KST = ZoneInfo("Asia/Seoul")
 
 
+def _save_target_weights_json(weights) -> None:
+    """목표 비중을 JSON으로 저장 — 대시보드 비중 차트용"""
+    import json
+    try:
+        path = Path("data/cache/last_target_weights.json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "updated_at": datetime.now().isoformat(),
+            "weights": {k: float(v) for k, v in weights.items() if float(v) > 0.001},
+        }
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        from loguru import logger as _log
+        _log.warning(f"목표 비중 저장 실패: {e}")
+
+
 # ── 로거 설정 ──────────────────────────────────────────
 def setup_logger():
     logger.remove()
@@ -196,6 +212,14 @@ class ETFQuantBot:
                 reduce_ratio = risk_result.detail.get("reduce_ratio", 0.3)
                 strategy_fn  = self._make_reduced_strategy(reduce_ratio)
                 logger.warning(f"포지션 축소 모드: {reduce_ratio*100:.0f}% 현금화")
+
+            # 3-1. 목표 비중 사전 계산 → 대시보드용 JSON 저장 + 재사용
+            try:
+                _cached_w = strategy_fn(prices)
+                _save_target_weights_json(_cached_w)
+                strategy_fn = lambda p, _w=_cached_w: _w
+            except Exception as _e:
+                logger.warning(f"목표 비중 사전 계산 실패 (전략 직접 사용): {_e}")
 
             # 4. 리밸런싱 실행
             from portfolio.rebalancer import PortfolioRebalancer
