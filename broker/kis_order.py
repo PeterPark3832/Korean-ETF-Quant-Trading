@@ -363,6 +363,39 @@ class KISOrderManager:
             logger.warning(f"주문 취소 오류: {e}")
             return False
 
+    # ── 실제 주문가능금액 조회 ────────────────────────────
+
+    def get_available_cash(self) -> int:
+        """
+        실제 주문가능금액 조회 (T+2 정산·미체결 차감 후)
+
+        balance.cash(예수금)는 미결제 포함 총액이라 실제 주문가능금액과 다를 수 있음.
+        KIS inquire-psbl-order API의 ord_psbl_cash를 사용해 정확한 값을 반환.
+        """
+        # 조회용 레퍼런스 종목: TIGER 단기통안채 (유동성 높고 안정적)
+        ref_ticker = "157450"
+        ref_price  = 112000   # 대략적인 현재가 (정확도 불필요, 가능금액 조회 목적)
+        try:
+            path   = "/uapi/domestic-stock/v1/trading/inquire-psbl-order"
+            tr_id  = "TTTC8908R" if self.client.mode == "real" else "VTTC8908R"
+            params = {
+                "CANO":                  self.client.acct_num,
+                "ACNT_PRDT_CD":          self.client.acct_prod,
+                "PDNO":                  ref_ticker,
+                "ORD_UNPR":              str(ref_price),
+                "ORD_DVSN":              "01",
+                "CMA_EVLU_AMT_ICLD_YN": "Y",
+                "OVRS_ICLD_YN":          "N",
+            }
+            data   = self.client._get(path, tr_id, params)
+            output = data.get("output", {})
+            cash   = int(output.get("ord_psbl_cash", 0))
+            logger.info(f"실제 주문가능금액: {cash:,}원")
+            return cash
+        except Exception as e:
+            logger.warning(f"주문가능금액 조회 실패 → balance.cash 사용: {e}")
+            return 0
+
     # ── 주문 가능 수량 조회 ────────────────────────────
 
     def get_max_buy_qty(self, ticker: str, price: int) -> int:

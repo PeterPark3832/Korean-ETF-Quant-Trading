@@ -141,13 +141,18 @@ class PortfolioRebalancer:
                 total_assets=0,
             )
 
-        # 매수에 실제로 쓸 수 있는 현금 (예수금 × 95% 안전 버퍼)
-        # total_assets에는 미결제·연계 계좌 금액이 포함될 수 있어 cash 기준으로 제한
-        available_cash = balance.cash * 0.95
+        # 실제 주문가능금액 조회 (T+2 정산·미체결 차감 후)
+        # balance.cash(예수금)는 미결제 포함 총액이므로 KIS API로 실제값 직접 조회
+        if hasattr(self.broker, "get_available_cash"):
+            ord_psbl = self.broker.get_available_cash()
+            available_cash = int(ord_psbl * 0.98) if ord_psbl > 0 else int(balance.cash * 0.95)
+        else:
+            available_cash = int(balance.cash * 0.95)
+
         logger.info(
             f"총자산: {total_assets:,.0f}원 | "
             f"예수금: {balance.cash:,.0f}원 | "
-            f"매수가능: {available_cash:,.0f}원"
+            f"실제 매수가능: {available_cash:,.0f}원"
         )
 
         # ── 2. 현재 비중 계산 ─────────────────────────
