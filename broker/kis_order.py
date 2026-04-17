@@ -181,44 +181,33 @@ class KISOrderManager:
             logger.warning(f"잔고 조회: 최대 페이지({MAX_PAGES}) 도달")
 
         # 보유 종목 파싱 (ticker 기준 중복 제거)
-        # KIS API는 같은 종목을 매입 단위(lot)별로 분리 반환하며,
-        # hldg_qty·evlu_amt·evlu_pfls_amt 는 각 record에 전체 값이 들어있음
-        # → 첫 record만 사용하고, pchs_amt(매입금액)만 lot별 합산하여 avg_price 재계산
-        merged: dict[str, dict] = {}
+        # KIS API는 같은 종목을 매입 단위(lot)별로 분리 반환하나,
+        # hldg_qty·evlu_amt·pchs_avg_pric 등 모든 집계값은 첫 record에 이미 전체 값이 담김
+        # → ticker 첫 번째 record만 사용하고 이후 중복 record는 무시
+        seen: set[str] = set()
+        holdings = []
         for item in all_output1:
             qty = int(item.get("hldg_qty", 0))
             if qty <= 0:
                 continue
-            ticker   = item.get("pdno", "")
-            purchase = float(item.get("pchs_amt", 0))
-            if ticker in merged:
-                merged[ticker]["_total_purchase"] += purchase
-            else:
-                merged[ticker] = {
-                    "ticker":          ticker,
-                    "name":            item.get("prdt_name", ""),
-                    "qty":             qty,
-                    "current_price":   float(item.get("prpr", 0)),
-                    "eval_amount":     float(item.get("evlu_amt", 0)),
-                    "profit_loss":     float(item.get("evlu_pfls_amt", 0)),
-                    "profit_rate":     float(item.get("evlu_pfls_rt", 0)),
-                    "_total_purchase": purchase,
-                }
+            ticker = item.get("pdno", "")
+            if ticker in seen:
+                continue
+            seen.add(ticker)
 
-        holdings = []
-        for v in merged.values():
-            qty      = v["qty"]
-            purchase = v["_total_purchase"]
-            avg_p    = purchase / qty if qty > 0 else v["current_price"]
-            pnl      = v["eval_amount"] - purchase
-            pnl_rate = (pnl / purchase * 100) if purchase > 0 else v["profit_rate"]
+            avg_price   = float(item.get("pchs_avg_pric", 0))
+            eval_amount = float(item.get("evlu_amt", 0))
+            purchase    = avg_price * qty
+            pnl         = eval_amount - purchase
+            pnl_rate    = (pnl / purchase * 100) if purchase > 0 else float(item.get("evlu_pfls_rt", 0))
+
             holdings.append(HoldingItem(
-                ticker        = v["ticker"],
-                name          = v["name"],
+                ticker        = ticker,
+                name          = item.get("prdt_name", ""),
                 qty           = qty,
-                avg_price     = avg_p,
-                current_price = v["current_price"],
-                eval_amount   = v["eval_amount"],
+                avg_price     = avg_price,
+                current_price = float(item.get("prpr", 0)),
+                eval_amount   = eval_amount,
                 profit_loss   = pnl,
                 profit_rate   = pnl_rate,
             ))
