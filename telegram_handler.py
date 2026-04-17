@@ -170,8 +170,10 @@ class TelegramCommandHandler:
             rows = []
             for h in sorted(balance.holdings, key=lambda x: x.eval_amount, reverse=True):
                 w   = h.eval_amount / total * 100 if total > 0 else 0
-                pnl = f"{h.profit_rate:>+6.1f}%"
-                rows.append(f"  {h.name[:12]:12s} {w:>5.1f}%  {pnl}")
+                rows.append(
+                    f"  {h.ticker} {h.name[:10]:10s} "
+                    f"{w:>5.1f}% {h.profit_rate:>+6.1f}%"
+                )
             holdings_text = "\n".join(rows)
         else:
             holdings_text = "  보유 종목 없음"
@@ -185,8 +187,8 @@ class TelegramCommandHandler:
             f"손  익:   {balance.total_pnl:>+13,.0f} 원  ({balance.total_pnl_rate:+.2f}%)\n"
             f"MDD:      {risk_st['current_mdd']*100:>13.2f} %\n"
             f"상  태:   {halted}\n"
-            f"{'─'*40}\n"
-            f"종목명           비중    수익률\n"
+            f"{'─'*38}\n"
+            f"  코드   종목명       비중  수익률\n"
             f"{holdings_text}"
             f"</pre>"
         )

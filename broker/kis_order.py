@@ -180,22 +180,54 @@ class KISOrderManager:
         else:
             logger.warning(f"잔고 조회: 최대 페이지({MAX_PAGES}) 도달")
 
-        # 보유 종목 파싱
-        holdings = []
+        # 보유 종목 파싱 (ticker 기준 중복 합산)
+        merged: dict[str, dict] = {}
         for item in all_output1:
             qty = int(item.get("hldg_qty", 0))
             if qty <= 0:
                 continue
-            holdings.append(HoldingItem(
-                ticker        = item.get("pdno", ""),
-                name          = item.get("prdt_name", ""),
-                qty           = qty,
-                avg_price     = float(item.get("pchs_avg_pric", 0)),
-                current_price = float(item.get("prpr", 0)),
-                eval_amount   = float(item.get("evlu_amt", 0)),
-                profit_loss   = float(item.get("evlu_pfls_amt", 0)),
-                profit_rate   = float(item.get("evlu_pfls_rt", 0)),
-            ))
+            ticker = item.get("pdno", "")
+            if ticker in merged:
+                prev = merged[ticker]
+                new_qty        = prev["qty"] + qty
+                new_eval       = prev["eval_amount"] + float(item.get("evlu_amt", 0))
+                new_pnl        = prev["profit_loss"] + float(item.get("evlu_pfls_amt", 0))
+                new_purchase   = prev["_purchase"] + float(item.get("pchs_amt", 0))
+                merged[ticker].update({
+                    "qty":          new_qty,
+                    "eval_amount":  new_eval,
+                    "profit_loss":  new_pnl,
+                    "_purchase":    new_purchase,
+                    "profit_rate":  (new_pnl / new_purchase * 100) if new_purchase > 0 else 0,
+                })
+            else:
+                purchase = float(item.get("pchs_amt", 0))
+                pnl      = float(item.get("evlu_pfls_amt", 0))
+                merged[ticker] = {
+                    "ticker":        ticker,
+                    "name":          item.get("prdt_name", ""),
+                    "qty":           qty,
+                    "avg_price":     float(item.get("pchs_avg_pric", 0)),
+                    "current_price": float(item.get("prpr", 0)),
+                    "eval_amount":   float(item.get("evlu_amt", 0)),
+                    "profit_loss":   pnl,
+                    "profit_rate":   float(item.get("evlu_pfls_rt", 0)),
+                    "_purchase":     purchase,
+                }
+
+        holdings = [
+            HoldingItem(
+                ticker        = v["ticker"],
+                name          = v["name"],
+                qty           = v["qty"],
+                avg_price     = v["avg_price"],
+                current_price = v["current_price"],
+                eval_amount   = v["eval_amount"],
+                profit_loss   = v["profit_loss"],
+                profit_rate   = v["profit_rate"],
+            )
+            for v in merged.values()
+        ]
 
         # 요약 파싱
         summary = output2[0] if output2 else {}
