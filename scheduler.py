@@ -77,7 +77,7 @@ class ETFQuantBot:
         from broker import create_broker
         from strategy import (
             DualMomentumStrategy, VAAStrategy, RiskParityStrategy,
-            MultiStrategyPortfolio,
+            MultiStrategyPortfolio, FactorMomentumStrategy,
         )
         from risk.guard import RiskGuard
         from notifier import Notifier
@@ -105,14 +105,17 @@ class ETFQuantBot:
 
         # 전략 선택
         strategies = {
-            "dual_momentum": DualMomentumStrategy(lookback_months=12, skip_months=1),
-            "vaa":           VAAStrategy(top_n_offensive=2, offensive_ratio=0.70, canary_threshold=1),
-            "risk_parity":   RiskParityStrategy(vol_window=60, target_vol=0.10, momentum_filter=True),
-            "multi":         MultiStrategyPortfolio(
-                                 dm_kwargs  = {"lookback_months": 12, "skip_months": 1},
-                                 vaa_kwargs = {"top_n_offensive": 2, "offensive_ratio": 0.70},
-                                 rp_kwargs  = {"vol_window": 60, "target_vol": 0.10, "momentum_filter": True},
-                             ),
+            "dual_momentum":   DualMomentumStrategy(lookback_months=12, skip_months=1),
+            "vaa":             VAAStrategy(top_n_offensive=2, offensive_ratio=0.70, canary_threshold=1),
+            "risk_parity":     RiskParityStrategy(vol_window=60, target_vol=0.10, momentum_filter=True),
+            "factor_momentum": FactorMomentumStrategy(top_n_per_class=1, score_threshold=0.0),
+            "multi":           MultiStrategyPortfolio(
+                                   dm_kwargs          = {"lookback_months": 12, "skip_months": 1},
+                                   vaa_kwargs         = {"top_n_offensive": 2, "offensive_ratio": 0.70},
+                                   rp_kwargs          = {"vol_window": 60, "target_vol": 0.10, "momentum_filter": True},
+                                   use_macro_factor   = True,
+                                   use_vol_targeting  = True,
+                               ),
         }
         if strategy_name not in strategies:
             raise ValueError(f"알 수 없는 전략: {strategy_name}. 선택: {list(strategies.keys())}")

@@ -50,7 +50,7 @@ def main():
     )
     parser.add_argument(
         "--strategy", default="dual_momentum",
-        choices=["dual_momentum", "vaa", "risk_parity", "multi"],
+        choices=["dual_momentum", "vaa", "risk_parity", "multi", "factor_momentum"],
         help="전략 선택 (기본: dual_momentum)",
     )
     parser.add_argument(
