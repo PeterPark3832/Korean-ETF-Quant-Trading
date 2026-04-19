@@ -80,7 +80,7 @@ td { padding: 11px 14px; font-size: 13px; border-top: 1px solid #0f172a; }
 <div class="hdr">
   <h1>📈 ETF 퀀트봇</h1>
   <span class="strat">%%STRATEGY%%</span>
-  <div class="cnt">자동새로고침 <span id="timer">30</span>초</div>
+  <button onclick="location.reload()" style="margin-left:auto;background:#1e40af;color:#bfdbfe;border:none;border-radius:7px;padding:6px 14px;font-size:12px;cursor:pointer">🔄 새로고침</button>
 </div>
 
 <div class="wrap">
@@ -123,15 +123,6 @@ td { padding: 11px 14px; font-size: 13px; border-top: 1px solid #0f172a; }
 </div>
 
 <script>
-// ── 자동 새로고침 카운트다운 ──────────────────────────
-(function() {
-  var t = 30, el = document.getElementById('timer');
-  setInterval(function() {
-    el.textContent = --t;
-    if (t <= 0) location.reload();
-  }, 1000);
-})();
-
 // ── Chart.js 전역 기본값 ─────────────────────────────
 Chart.defaults.color = '#64748b';
 Chart.defaults.borderColor = 'rgba(51,65,85,0.6)';
