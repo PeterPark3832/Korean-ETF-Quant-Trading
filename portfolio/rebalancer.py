@@ -200,6 +200,8 @@ class PortfolioRebalancer:
         sell_orders = [o for o in orders if o.side == "sell"]
         buy_orders  = [o for o in orders if o.side == "buy"]
 
+        exec_cash = available_cash   # 실행 중 잔여 매수가능금액 추적
+
         for order in sell_orders + buy_orders:
             if self.dry_run:
                 logger.info(
@@ -215,21 +217,31 @@ class PortfolioRebalancer:
                 # 지정가 매수: 호가단위 올림 + 실제 주문가능금액 기준 수량 확정
                 buy_price = _tick_price(order.price, "up")
                 qty = order.qty
+
                 if hasattr(self.broker, "get_max_buy_qty"):
                     try:
                         max_qty = self.broker.get_max_buy_qty(order.ticker, buy_price)
-                        logger.info(f"[{order.ticker}] 주문가능 수량: {max_qty}주 @ {buy_price:,}원")
                         if max_qty > 0:
                             qty = min(qty, max_qty)
+                            logger.info(f"[{order.ticker}] 주문가능수량: {max_qty}주 → 주문: {qty}주")
                         else:
-                            result.fail_count += 1
-                            continue
+                            # ISA 계좌 등 max_qty=0 반환 시 추적 잔여현금으로 수량 계산
+                            qty = min(qty, int(exec_cash / buy_price))
+                            logger.info(
+                                f"[{order.ticker}] max_qty=0 → 잔여현금({exec_cash:,.0f}원) 기준 {qty}주"
+                            )
                     except Exception as e:
-                        logger.warning(f"[{order.ticker}] 주문가능 수량 조회 실패: {e}")
+                        logger.warning(f"[{order.ticker}] 주문가능수량 조회 실패: {e}")
+                        qty = min(qty, int(exec_cash / buy_price))
+
                 if qty <= 0:
-                    result.fail_count += 1
+                    logger.info(f"[{order.ticker}] 매수가능 수량 없음 → 스킵")
+                    result.skipped_count += 1
                     continue
+
                 res = self.broker.order_buy(order.ticker, qty, price=buy_price, order_type="00")
+                if res.success:
+                    exec_cash = max(0, exec_cash - qty * buy_price)
 
             if res.success:
                 result.success_count += 1
