@@ -103,6 +103,16 @@ class RiskGuard:
                 daily_loss=0,
             )
 
+        # peak_value 초기화 또는 오염 감지 (계좌 전환 등으로 2배 이상 차이 시 재설정)
+        if self._state.peak_value <= 0:
+            self._state.peak_value = total
+        elif self._state.peak_value > total * 2.0:
+            logger.warning(
+                f"[리스크] peak_value({self._state.peak_value:,.0f}원)가 "
+                f"현재 총자산({total:,.0f}원)의 2배 초과 → peak_value 재설정"
+            )
+            self._state.peak_value = total
+
         # 최고점 업데이트
         if total > self._state.peak_value:
             self._state.peak_value = total
@@ -180,6 +190,13 @@ class RiskGuard:
         self._state.halt_reason = ""
         self._save_state()
         logger.info("[리스크] 거래 재개")
+
+    def reset_peak(self, current_value: float) -> None:
+        """MDD 최고점 수동 재설정 (계좌 전환, 초기화 등)"""
+        self._state.peak_value  = current_value
+        self._state.current_mdd = 0.0
+        self._save_state()
+        logger.info(f"[리스크] peak_value 재설정: {current_value:,.0f}원")
 
     def get_status(self) -> dict:
         return {

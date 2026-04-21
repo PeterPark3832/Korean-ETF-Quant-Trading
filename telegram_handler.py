@@ -50,6 +50,7 @@ class TelegramCommandHandler:
         "  <code>/report</code>           — 성과 리포트\n"
         "  <code>/halt</code>             — 거래 중단\n"
         "  <code>/resume</code>           — 거래 재개\n"
+        "  <code>/resetmdd</code>         — MDD 최고점 재설정\n"
         "  <code>/help</code>             — 이 목록"
     )
 
@@ -146,6 +147,9 @@ class TelegramCommandHandler:
             elif cmd == "/resume":
                 self._cmd_resume()
 
+            elif cmd == "/resetmdd":
+                self._cmd_reset_mdd()
+
             elif cmd == "/report":
                 self._cmd_report()
 
@@ -221,6 +225,14 @@ class TelegramCommandHandler:
     def _cmd_resume(self) -> None:
         self.bot.guard.resume()
         self.notifier.send_text("🟢 거래가 <b>재개</b>되었습니다.")
+
+    def _cmd_reset_mdd(self) -> None:
+        balance = self.bot.broker.get_balance()
+        self.bot.guard.reset_peak(balance.total_assets)
+        self.notifier.send_text(
+            f"✅ MDD 최고점이 현재 총자산 기준으로 재설정되었습니다.\n"
+            f"새 기준: <b>{balance.total_assets:,.0f}원</b> (MDD 0.00%)"
+        )
 
     def _cmd_report(self) -> None:
         if self.reporter:
