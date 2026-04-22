@@ -345,14 +345,17 @@ class PortfolioRebalancer:
                 skipped += 1
                 continue
 
-            # 매수: 실제 주문가능금액(예수금) 초과 방지
             if diff > 0:
+                # 매수: 잔여 현금 초과 방지
                 buyable_amount = min(diff_amount, remaining_cash)
                 qty = int(buyable_amount / price)
                 if qty > 0:
                     remaining_cash -= qty * price
             else:
+                # 매도: 예정 대금을 remaining_cash에 반영 (당일 재투자 가능)
                 qty = int(abs(diff_amount) / price)
+                if qty > 0:
+                    remaining_cash += int(qty * price * (1 - TRANSACTION_COST))
 
             if qty <= 0:
                 skipped += 1

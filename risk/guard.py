@@ -103,9 +103,10 @@ class RiskGuard:
                 daily_loss=0,
             )
 
-        # peak_value 초기화 또는 오염 감지 (계좌 전환 등으로 2배 이상 차이 시 재설정)
+        # peak_value 초기화: 최초 1회만 (이후 갱신은 reset_daily에서 하루 1회)
         if self._state.peak_value <= 0:
             self._state.peak_value = total
+        # 계좌 전환·오염 감지: 2배 초과 시 자동 재설정
         elif self._state.peak_value > total * 2.0:
             logger.warning(
                 f"[리스크] peak_value({self._state.peak_value:,.0f}원)가 "
@@ -113,11 +114,7 @@ class RiskGuard:
             )
             self._state.peak_value = total
 
-        # 최고점 업데이트
-        if total > self._state.peak_value:
-            self._state.peak_value = total
-
-        # MDD 계산
+        # MDD 계산 (peak 갱신은 하지 않음 — reset_daily에서 하루 1회만 갱신)
         mdd = (total - self._state.peak_value) / self._state.peak_value if self._state.peak_value > 0 else 0
 
         # 일간 손실 계산
@@ -171,9 +168,16 @@ class RiskGuard:
     # ── 일간 리셋 ──────────────────────────────────────
 
     def reset_daily(self, current_value: float) -> None:
-        """매일 장 시작 전 호출 (일간 기준점 초기화)"""
+        """매일 09:05 장 시작 전 호출 (일간 기준점 초기화 + 최고점 갱신)"""
         prev = self._state.daily_start_value
         self._state.daily_start_value = current_value
+
+        # 최고점 갱신 — 하루 1회 장 시작 기준으로만 업데이트 (intraday 일시 급등 방지)
+        if current_value > self._state.peak_value:
+            logger.info(
+                f"[리스크] 최고점 갱신: {self._state.peak_value:,.0f} → {current_value:,.0f}원"
+            )
+            self._state.peak_value = current_value
 
         # 연속 손실 일수 업데이트
         if prev > 0 and current_value < prev:
