@@ -11,9 +11,9 @@
   5. 매도 먼저 → 현금 확보 → 매수 순서로 실행
   6. 리밸런싱 결과 기록
 
-[개선] 주문 체결 안정성 강화:
-  - 매수 주문 계획 및 실행 시 잔여 현금의 1%를 안전 버퍼(Buffer)로 남겨두어, 
-    호가 틱 보정(올림) 및 수수료 계산 오차로 인한 마지막 종목 매수 스킵 현상 방지.
+[개선 완료 사항]:
+  - 매수 주문 시 잔여 현금의 1% 안전 버퍼 적용 (체결 안정성 강화)
+  - D+2 정산 예수금을 최우선 가용 현금으로 인식하도록 로직 개선 (매수 누락 방지)
 """
 from __future__ import annotations
 
@@ -129,17 +129,20 @@ class PortfolioRebalancer:
                 total_assets=0,
             )
 
-        # 실제 주문가능금액 조회 (T+2 정산·미체결 차감 후)
+        # ── [개선] 가용 예수금 최우선 산정 ────────────────
+        # kis_order.py에서 파싱한 D+2 예수금(balance.cash)과 
+        # API 실시간 주문가능조회(ord_psbl)를 비교하여 큰 값을 가용 현금으로 사용
         if hasattr(self.broker, "get_available_cash"):
             ord_psbl = self.broker.get_available_cash()
-            available_cash = int(ord_psbl * 0.98) if ord_psbl > 0 else int(balance.cash * 0.95)
+            target_cash = max(balance.cash, ord_psbl)
+            # 증거금 및 수수료 등을 고려해 98%만 매수 한도로 설정
+            available_cash = int(target_cash * 0.98) 
         else:
             available_cash = int(balance.cash * 0.95)
 
         logger.info(
             f"총자산: {total_assets:,.0f}원 | "
-            f"예수금: {balance.cash:,.0f}원 | "
-            f"실제 매수가능: {available_cash:,.0f}원"
+            f"인식된 가용현금(D+2): {available_cash:,.0f}원"
         )
 
         # ── 2. 현재 비중 계산 ─────────────────────────
@@ -204,7 +207,8 @@ class PortfolioRebalancer:
                 # 지정가 매수: 호가단위 올림 처리
                 buy_price = _tick_price(order.price, "up")
                 qty = order.qty
-                safe_exec_cash = exec_cash * 0.99  # [개선] API 조회가 실패할 경우를 대비한 1% 안전 버퍼
+                # [개선] 1% 안전 버퍼: API 조회가 실패할 경우를 대비하여 현금을 타이트하게 다 쓰지 않음
+                safe_exec_cash = exec_cash * 0.99 
 
                 if hasattr(self.broker, "get_max_buy_qty"):
                     try:
@@ -333,7 +337,7 @@ class PortfolioRebalancer:
                 continue
 
             if diff > 0:
-                # [개선] 매수: 호가 틱 상승 보정치 및 수수료 등을 감안해 현금의 99%만 한도로 산정
+                # [개선] 매수: 호가 틱 상승 보정치 및 수수료 등을 감안해 잔여 현금의 99%만 한도로 산정
                 safe_remaining_cash = remaining_cash * 0.99
                 buyable_amount = min(diff_amount, safe_remaining_cash)
                 qty = int(buyable_amount / price)
