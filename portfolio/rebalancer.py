@@ -11,10 +11,9 @@
   5. 매도 먼저 → 현금 확보 → 매수 순서로 실행
   6. 리밸런싱 결과 기록
 
-안전 장치:
-  - 단일 주문 최대 금액 제한
-  - 장중 시간 외 주문 차단
-  - 잔액 부족 시 비중 스케일 다운
+[개선] 주문 체결 안정성 강화:
+  - 매수 주문 계획 및 실행 시 잔여 현금의 1%를 안전 버퍼(Buffer)로 남겨두어, 
+    호가 틱 보정(올림) 및 수수료 계산 오차로 인한 마지막 종목 매수 스킵 현상 방지.
 """
 from __future__ import annotations
 
@@ -93,11 +92,6 @@ class RebalanceResult:
 class PortfolioRebalancer:
     """
     포트폴리오 리밸런싱 실행기
-
-    사용법:
-        rebalancer = PortfolioRebalancer(broker, strategy_fn)
-        result = rebalancer.run()
-        print(result.summary())
     """
 
     def __init__(
@@ -122,13 +116,7 @@ class PortfolioRebalancer:
         self,
         prices_window: pd.DataFrame | None = None,
     ) -> RebalanceResult:
-        """
-        리밸런싱 실행
-
-        Args:
-            prices_window: 전략에 넘길 가격 DataFrame
-                           None이면 self.price_data 사용
-        """
+        """리밸런싱 실행"""
         logger.info(f"{'[DRY RUN] ' if self.dry_run else ''}리밸런싱 시작")
 
         # ── 1. 현재 잔고 조회 ────────────────────────
@@ -142,7 +130,6 @@ class PortfolioRebalancer:
             )
 
         # 실제 주문가능금액 조회 (T+2 정산·미체결 차감 후)
-        # balance.cash(예수금)는 미결제 포함 총액이므로 KIS API로 실제값 직접 조회
         if hasattr(self.broker, "get_available_cash"):
             ord_psbl = self.broker.get_available_cash()
             available_cash = int(ord_psbl * 0.98) if ord_psbl > 0 else int(balance.cash * 0.95)
@@ -214,9 +201,10 @@ class PortfolioRebalancer:
             if order.side == "sell":
                 res = self.broker.order_sell(order.ticker, order.qty, price=0)
             else:
-                # 지정가 매수: 호가단위 올림 + 실제 주문가능금액 기준 수량 확정
+                # 지정가 매수: 호가단위 올림 처리
                 buy_price = _tick_price(order.price, "up")
                 qty = order.qty
+                safe_exec_cash = exec_cash * 0.99  # [개선] API 조회가 실패할 경우를 대비한 1% 안전 버퍼
 
                 if hasattr(self.broker, "get_max_buy_qty"):
                     try:
@@ -225,14 +213,13 @@ class PortfolioRebalancer:
                             qty = min(qty, max_qty)
                             logger.info(f"[{order.ticker}] 주문가능수량: {max_qty}주 → 주문: {qty}주")
                         else:
-                            # ISA 계좌 등 max_qty=0 반환 시 추적 잔여현금으로 수량 계산
-                            qty = min(qty, int(exec_cash / buy_price))
+                            qty = min(qty, int(safe_exec_cash / buy_price))
                             logger.info(
-                                f"[{order.ticker}] max_qty=0 → 잔여현금({exec_cash:,.0f}원) 기준 {qty}주"
+                                f"[{order.ticker}] max_qty=0 → 잔여현금({safe_exec_cash:,.0f}원) 기준 {qty}주"
                             )
                     except Exception as e:
                         logger.warning(f"[{order.ticker}] 주문가능수량 조회 실패: {e}")
-                        qty = min(qty, int(exec_cash / buy_price))
+                        qty = min(qty, int(safe_exec_cash / buy_price))
 
                 if qty <= 0:
                     logger.info(f"[{order.ticker}] 매수가능 수량 없음 → 스킵")
@@ -346,8 +333,9 @@ class PortfolioRebalancer:
                 continue
 
             if diff > 0:
-                # 매수: 잔여 현금 초과 방지
-                buyable_amount = min(diff_amount, remaining_cash)
+                # [개선] 매수: 호가 틱 상승 보정치 및 수수료 등을 감안해 현금의 99%만 한도로 산정
+                safe_remaining_cash = remaining_cash * 0.99
+                buyable_amount = min(diff_amount, safe_remaining_cash)
                 qty = int(buyable_amount / price)
                 if qty > 0:
                     remaining_cash -= qty * price
