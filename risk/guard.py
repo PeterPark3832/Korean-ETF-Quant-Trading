@@ -35,6 +35,7 @@ class RiskState:
     peak_value:         float = 0.0       # 역대 최고 포트폴리오 가치
     current_mdd:        float = 0.0       # 현재 MDD (음수)
     daily_start_value:  float = 0.0       # 당일 시작 가치
+    daily_start_date:   str   = ""        # daily_start_value 기록 날짜 (YYYY-MM-DD)
     consecutive_loss_days: int = 0        # 연속 손실 일수
     is_halted:          bool = False      # 거래 중단 여부
     halt_reason:        str  = ""         # 중단 사유
@@ -117,9 +118,11 @@ class RiskGuard:
         # MDD 계산 (peak 갱신은 하지 않음 — reset_daily에서 하루 1회만 갱신)
         mdd = (total - self._state.peak_value) / self._state.peak_value if self._state.peak_value > 0 else 0
 
-        # 일간 손실 계산
+        # 일간 손실 계산 — daily_start_date가 오늘이 아니면 사용하지 않음 (오염 방지)
+        today_str  = date.today().isoformat()
         daily_loss = 0.0
-        if self._state.daily_start_value > 0:
+        if (self._state.daily_start_value > 0
+                and self._state.daily_start_date == today_str):
             daily_loss = (total - self._state.daily_start_value) / self._state.daily_start_value
 
         # 상태 업데이트
@@ -171,6 +174,7 @@ class RiskGuard:
         """매일 09:05 장 시작 전 호출 (일간 기준점 초기화 + 최고점 갱신)"""
         prev = self._state.daily_start_value
         self._state.daily_start_value = current_value
+        self._state.daily_start_date  = date.today().isoformat()
 
         # 최고점 갱신 — 하루 1회 장 시작 기준으로만 업데이트 (intraday 일시 급등 방지)
         if current_value > self._state.peak_value:
