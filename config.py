@@ -1,5 +1,7 @@
 """
 전략 및 포트폴리오 전역 설정
+────────────────────────────────────────────────────────────────
+[개선] ETF 상장폐지/코드변경 검증 로직(validate_etf_universe) 추가
 """
 from pathlib import Path
 from datetime import datetime
@@ -86,3 +88,40 @@ SLIPPAGE = 0.001            # 슬리피지 0.1%
 WF_TRAIN_YEARS = 3           # In-sample 기간
 WF_TEST_YEARS  = 1           # Out-of-sample 기간
 WF_STEP_MONTHS = 6           # 슬라이딩 스텝
+
+
+# ── 유틸리티: ETF 상태 검증 ────────────────────────────
+def validate_etf_universe() -> list[str]:
+    """
+    봇 시작 전 또는 정기적으로 호출하여 ALL_ETFS 내의 종목이 
+    현재 시장에 정상 상장되어 있는지(상장폐지 여부) 확인합니다.
+    """
+    from loguru import logger
+    try:
+        from pykrx import stock
+        
+        # 오늘 날짜 기준 상장된 전체 ETF 티커 리스트 가져오기
+        today = datetime.today().strftime("%Y%m%d")
+        active_etfs = stock.get_etf_ticker_list(today)
+        
+        if not active_etfs:
+            logger.warning("[Config] KRX API에서 데이터를 불러오지 못했습니다. (주말/휴장일 가능성)")
+            return []
+            
+        invalid_tickers = []
+        for ticker, name in ALL_ETFS.items():
+            if ticker not in active_etfs:
+                invalid_tickers.append(ticker)
+                logger.error(f"🚨 [리스크] 상장폐지 또는 종목코드 변경 감지: {ticker} ({name})")
+                
+        if not invalid_tickers:
+            logger.info("✅ [Config] 등록된 모든 ETF가 정상 상장 상태입니다.")
+            
+        return invalid_tickers
+
+    except ImportError:
+        logger.warning("[Config] pykrx 라이브러리가 설치되지 않아 ETF 검증을 건너뜁니다.")
+        return []
+    except Exception as e:
+        logger.warning(f"[Config] ETF 상태 검증 중 오류: {e}")
+        return []
