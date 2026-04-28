@@ -223,8 +223,13 @@ class TelegramCommandHandler:
         )
 
     def _cmd_resume(self) -> None:
+        balance = self.bot.broker.get_balance()
         self.bot.guard.resume()
-        self.notifier.send_text("🟢 거래가 <b>재개</b>되었습니다.")
+        self.bot.guard.reset_peak(balance.total_assets)
+        self.notifier.send_text(
+            f"🟢 거래가 <b>재개</b>되었습니다.\n"
+            f"MDD 기준점: <b>{balance.total_assets:,.0f}원</b>으로 자동 재설정"
+        )
 
     def _cmd_reset_mdd(self) -> None:
         balance = self.bot.broker.get_balance()
