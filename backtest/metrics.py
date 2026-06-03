@@ -150,19 +150,14 @@ def _calculate_mdd(portfolio_values: pd.Series) -> tuple[float, int]:
     """(MDD 비율, MDD 지속 거래일 수) 반환. MDD는 음수."""
     cummax = portfolio_values.cummax()
     drawdown = (portfolio_values - cummax) / cummax
+    mdd = float(drawdown.min())
 
-    mdd = drawdown.min()
-
-    # MDD 지속 기간: 고점 대비 하락 구간 최대 길이
-    in_drawdown = drawdown < 0
-    max_duration = 0
-    current_duration = 0
-    for flag in in_drawdown:
-        if flag:
-            current_duration += 1
-            max_duration = max(max_duration, current_duration)
-        else:
-            current_duration = 0
+    # MDD 지속 기간: 연속 하락 구간의 최대 길이를 벡터 연산으로 계산
+    in_dd = (drawdown < 0).astype(int)
+    # 하락 구간 경계마다 그룹 번호를 부여
+    group = (in_dd.diff().fillna(0) != 0).cumsum()
+    lengths = in_dd.groupby(group).sum()
+    max_duration = int(lengths.max()) if len(lengths) > 0 else 0
 
     return mdd, max_duration
 

@@ -26,20 +26,14 @@ import numpy as np
 from loguru import logger
 
 from config import ALL_ETFS, TRANSACTION_COST
+from utils.market import tick_price as _tick_price
 
-
-def _tick_price(price: int, direction: str = "up") -> int:
-    """KRX 호가단위 기준으로 가격 조정 (매수=올림, 매도=내림)"""
-    if price < 2_000:        tick = 1
-    elif price < 5_000:      tick = 5
-    elif price < 10_000:     tick = 10
-    elif price < 50_000:     tick = 50
-    elif price < 100_000:    tick = 100
-    elif price < 500_000:    tick = 500
-    else:                    tick = 1_000
-    if direction == "up":
-        return ((price + tick - 1) // tick) * tick
-    return (price // tick) * tick
+# 매수 주문 시 잔여 현금 중 실제 사용 비율 (수수료·슬리피지 여유분 확보)
+_BUY_CASH_RATIO = 0.99
+# KIS API 가용현금 중 실제 주문에 사용할 비율
+_KIS_AVAILABLE_RATIO = 0.98
+# 브로커별 기본 가용현금 비율 (API 없는 경우)
+_DEFAULT_AVAILABLE_RATIO = 0.95
 
 
 @dataclass
@@ -135,10 +129,9 @@ class PortfolioRebalancer:
         if hasattr(self.broker, "get_available_cash"):
             ord_psbl = self.broker.get_available_cash()
             target_cash = max(balance.cash, ord_psbl)
-            # 증거금 및 수수료 등을 고려해 98%만 매수 한도로 설정
-            available_cash = int(target_cash * 0.98) 
+            available_cash = int(target_cash * _KIS_AVAILABLE_RATIO)
         else:
-            available_cash = int(balance.cash * 0.95)
+            available_cash = int(balance.cash * _DEFAULT_AVAILABLE_RATIO)
 
         logger.info(
             f"총자산: {total_assets:,.0f}원 | "
@@ -207,8 +200,7 @@ class PortfolioRebalancer:
                 # 지정가 매수: 호가단위 올림 처리
                 buy_price = _tick_price(order.price, "up")
                 qty = order.qty
-                # [개선] 1% 안전 버퍼: API 조회가 실패할 경우를 대비하여 현금을 타이트하게 다 쓰지 않음
-                safe_exec_cash = exec_cash * 0.99 
+                safe_exec_cash = exec_cash * _BUY_CASH_RATIO
 
                 if hasattr(self.broker, "get_max_buy_qty"):
                     try:
@@ -337,8 +329,7 @@ class PortfolioRebalancer:
                 continue
 
             if diff > 0:
-                # [개선] 매수: 호가 틱 상승 보정치 및 수수료 등을 감안해 잔여 현금의 99%만 한도로 산정
-                safe_remaining_cash = remaining_cash * 0.99
+                safe_remaining_cash = remaining_cash * _BUY_CASH_RATIO
                 buyable_amount = min(diff_amount, safe_remaining_cash)
                 qty = int(buyable_amount / price)
                 if qty > 0:

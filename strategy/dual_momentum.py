@@ -117,22 +117,7 @@ class DualMomentumStrategy(BaseStrategy):
                         if ct in weights.index:
                             weights[ct] += alloc / top_n
 
-        # 합산 = 1 정규화
-        total = weights.sum()
-        if total > 0:
-            weights = weights / total
-
-        return weights
-
-    def _all_cash(self, tickers: pd.Index) -> pd.Series:
-        w = pd.Series(0.0, index=tickers)
-        cash_tickers = list(ETF_UNIVERSE.get("CASH", {}).keys())
-        available = [t for t in cash_tickers if t in tickers]
-        if available:
-            w[available[0]] = 1.0
-        elif len(tickers) > 0:
-            w.iloc[0] = 1.0
-        return w
+        return self.normalize_weights(weights)
 
     def _param_str(self) -> str:
         return (

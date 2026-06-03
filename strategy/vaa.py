@@ -111,8 +111,8 @@ class VAAStrategy(BaseStrategy):
 
         # ── 공격 모드: 양수 모멘텀 공격 자산 top_n + 방어 버퍼 ──
         weights = self._allocate_offensive(scores, prices.columns)
-        total   = weights.sum()
-        return weights / total if total > 0 else self._all_cash(prices.columns)
+        normalized = self.normalize_weights(weights)
+        return normalized if normalized.sum() > 0 else self._all_cash(prices.columns)
 
     # ── 모멘텀 스코어 ──────────────────────────────────
 
@@ -184,16 +184,8 @@ class VAAStrategy(BaseStrategy):
         return weights
 
     def _all_cash(self, tickers: pd.Index) -> pd.Series:
-        """전액 KOFR(현금) 또는 단기채권"""
-        w = pd.Series(0.0, index=tickers)
-        # KOFR 우선, 없으면 단기통안채
-        for t in ["449170", "157450", "136340"]:
-            if t in tickers:
-                w[t] = 1.0
-                return w
-        if len(tickers) > 0:
-            w.iloc[0] = 1.0
-        return w
+        """전액 KOFR(현금) 또는 단기채권 — VAA 전용 우선순위"""
+        return super()._all_cash(tickers, preferred_order=["449170", "157450", "136340"])
 
     def _param_str(self) -> str:
         return (

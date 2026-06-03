@@ -19,3 +19,7 @@ uvicorn[standard]>=0.20.0
 # 유틸
 python-dotenv>=1.0.0
 loguru>=0.7.0
+
+# 테스트
+pytest>=7.4.0
+pytest-mock>=3.12.0
