@@ -160,28 +160,36 @@ class KISClient:
 
     # ── 공통 요청 헬퍼 ────────────────────────────────
 
-    def _get(
+    _TOKEN_EXPIRED_CODES = frozenset({"EGW00123", "EGW00121"})
+
+    def _request_with_retry(
         self,
+        method: str,
         path: str,
         tr_id: str,
-        params: dict[str, Any],
+        *,
+        params: dict[str, Any] | None = None,
+        body: dict[str, Any] | None = None,
         retries: int = 3,
     ) -> dict:
-        url     = f"{self.domain}{path}"
+        """GET/POST 공통 재시도 래퍼 — 토큰 만료 자동 갱신 포함."""
+        url = f"{self.domain}{path}"
         headers = self._build_headers(tr_id)
         for attempt in range(retries):
             self._rate.wait()
             try:
-                resp = requests.get(url, headers=headers, params=params, timeout=10)
+                if method == "GET":
+                    resp = requests.get(url, headers=headers, params=params, timeout=10)
+                else:
+                    resp = requests.post(url, headers=headers, json=body, timeout=10)
                 resp.raise_for_status()
                 data = resp.json()
                 if data.get("rt_cd") == "0":
                     return data
-                # 토큰 만료 시 재발급 후 재시도
-                if data.get("msg_cd") in ("EGW00123", "EGW00121"):
+                if data.get("msg_cd") in self._TOKEN_EXPIRED_CODES:
                     logger.warning("토큰 만료 → 재발급")
                     self._token = None
-                    headers     = self._build_headers(tr_id)
+                    headers = self._build_headers(tr_id)
                     continue
                 logger.error(f"API 오류: {data.get('msg1', '')} ({data.get('msg_cd', '')})")
                 return data
@@ -190,6 +198,15 @@ class KISClient:
                 time.sleep(1.0 * (attempt + 1))
         raise RuntimeError(f"API 요청 {retries}회 실패: {path}")
 
+    def _get(
+        self,
+        path: str,
+        tr_id: str,
+        params: dict[str, Any],
+        retries: int = 3,
+    ) -> dict:
+        return self._request_with_retry("GET", path, tr_id, params=params, retries=retries)
+
     def _post(
         self,
         path: str,
@@ -197,26 +214,7 @@ class KISClient:
         body: dict[str, Any],
         retries: int = 3,
     ) -> dict:
-        url     = f"{self.domain}{path}"
-        headers = self._build_headers(tr_id)
-        for attempt in range(retries):
-            self._rate.wait()
-            try:
-                resp = requests.post(url, headers=headers, json=body, timeout=10)
-                resp.raise_for_status()
-                data = resp.json()
-                if data.get("rt_cd") == "0":
-                    return data
-                if data.get("msg_cd") in ("EGW00123", "EGW00121"):
-                    self._token = None
-                    headers     = self._build_headers(tr_id)
-                    continue
-                logger.error(f"API 오류: {data.get('msg1', '')} ({data.get('msg_cd', '')})")
-                return data
-            except requests.RequestException as e:
-                logger.warning(f"요청 실패 [{attempt+1}/{retries}]: {e}")
-                time.sleep(1.0 * (attempt + 1))
-        raise RuntimeError(f"API 요청 {retries}회 실패: {path}")
+        return self._request_with_retry("POST", path, tr_id, body=body, retries=retries)
 
     def _build_headers(self, tr_id: str) -> dict:
         return {
