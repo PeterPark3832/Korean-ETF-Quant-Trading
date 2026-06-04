@@ -175,6 +175,7 @@ class KISClient:
         """GET/POST 공통 재시도 래퍼 — 토큰 만료 자동 갱신 포함."""
         url = f"{self.domain}{path}"
         headers = self._build_headers(tr_id)
+        last_err: str = ""
         for attempt in range(retries):
             self._rate.wait()
             try:
@@ -182,6 +183,15 @@ class KISClient:
                     resp = requests.get(url, headers=headers, params=params, timeout=10)
                 else:
                     resp = requests.post(url, headers=headers, json=body, timeout=10)
+
+                # 401/403은 재시도해도 의미 없음 → 즉시 인증 오류로 전환
+                if resp.status_code in (401, 403):
+                    raise RuntimeError(
+                        f"KIS API 인증 실패 (HTTP {resp.status_code}) — "
+                        "API 키 만료·모드 불일치·IP 미등록 여부를 확인하세요. "
+                        f"path={path}"
+                    )
+
                 resp.raise_for_status()
                 data = resp.json()
                 if data.get("rt_cd") == "0":
@@ -191,12 +201,18 @@ class KISClient:
                     self._token = None
                     headers = self._build_headers(tr_id)
                     continue
-                logger.error(f"API 오류: {data.get('msg1', '')} ({data.get('msg_cd', '')})")
+                logger.error(
+                    f"API 오류 [{resp.status_code}]: {data.get('msg1', '')} "
+                    f"(msg_cd={data.get('msg_cd', '')}, path={path})"
+                )
                 return data
+            except RuntimeError:
+                raise
             except requests.RequestException as e:
-                logger.warning(f"요청 실패 [{attempt+1}/{retries}]: {e}")
+                last_err = f"HTTP {getattr(getattr(e, 'response', None), 'status_code', 'N/A')}: {e}"
+                logger.warning(f"요청 실패 [{attempt+1}/{retries}] {last_err}")
                 time.sleep(1.0 * (attempt + 1))
-        raise RuntimeError(f"API 요청 {retries}회 실패: {path}")
+        raise RuntimeError(f"API 요청 {retries}회 실패: {path} | 마지막 오류: {last_err}")
 
     def _get(
         self,
