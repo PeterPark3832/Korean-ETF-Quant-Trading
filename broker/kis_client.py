@@ -124,6 +124,9 @@ class KISClient:
         }
         resp = requests.post(url, json=body, timeout=10)
         resp.raise_for_status()
+        ct = resp.headers.get("Content-Type", "")
+        if "application/json" not in ct:
+            raise RuntimeError(f"토큰 발급 응답이 JSON이 아님: Content-Type={ct!r}")
         data = resp.json()
 
         if "access_token" not in data:
@@ -139,8 +142,8 @@ class KISClient:
     def _load_token_cache(self) -> dict | None:
         try:
             if TOKEN_CACHE.exists():
-                data = json.loads(TOKEN_CACHE.read_text())
-                if data.get("mode") == self.mode and data.get("app_key") == self.app_key:
+                data = json.loads(TOKEN_CACHE.read_text(encoding="utf-8"))
+                if data.get("mode") == self.mode:
                     return data
         except Exception:
             pass
@@ -149,12 +152,14 @@ class KISClient:
     def _save_token_cache(self, token: str, expires: datetime) -> None:
         try:
             TOKEN_CACHE.parent.mkdir(parents=True, exist_ok=True)
-            TOKEN_CACHE.write_text(json.dumps({
+            tmp = TOKEN_CACHE.with_suffix(".tmp")
+            tmp.write_text(json.dumps({
                 "access_token": token,
                 "expires_at":   expires.isoformat(),
                 "mode":         self.mode,
-                "app_key":      self.app_key,
-            }))
+            }), encoding="utf-8")
+            os.chmod(tmp, 0o600)
+            tmp.rename(TOKEN_CACHE)
         except Exception as e:
             logger.warning(f"토큰 캐시 저장 실패: {e}")
 

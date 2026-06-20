@@ -1237,6 +1237,102 @@ def _build_html(bot: "ETFQuantBot") -> str:
     return html
 
 
+def _login_html() -> str:
+    """비밀번호 로그인 페이지 (인증 전 GET / 에서 노출)."""
+    return """<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>ETF 퀀트봇 · 로그인</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root {
+    --navy:#101935; --navy-2:#0b1226; --indigo:#4338CA; --indigo-l:#6366F1;
+    --border:rgba(255,255,255,.08); --text-3:#94A3B8;
+  }
+  body {
+    font-family:'Inter',system-ui,sans-serif;
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(1200px 600px at 50% -10%, #1a2a52 0%, var(--navy) 45%, var(--navy-2) 100%);
+    padding:24px;
+  }
+  .box {
+    width:100%; max-width:360px;
+    background:rgba(255,255,255,.04); backdrop-filter:blur(12px);
+    border:1px solid var(--border); border-radius:20px;
+    padding:36px 30px 30px; box-shadow:0 24px 60px rgba(0,0,0,.45);
+  }
+  .logo { display:flex; flex-direction:column; align-items:center; gap:6px; margin-bottom:26px; }
+  .logo-ico {
+    width:52px; height:52px; border-radius:14px;
+    background:linear-gradient(135deg,var(--indigo),var(--indigo-l));
+    display:flex; align-items:center; justify-content:center; font-size:26px;
+    box-shadow:0 8px 24px rgba(79,70,229,.4);
+  }
+  .title { color:#fff; font-size:18px; font-weight:800; letter-spacing:-.03em; margin-top:6px; }
+  .sub { color:var(--text-3); font-size:12.5px; }
+  label { display:block; color:var(--text-3); font-size:11px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.06em; margin-bottom:8px; }
+  input {
+    width:100%; padding:13px 15px; font-size:15px; color:#fff;
+    background:rgba(255,255,255,.06); border:1px solid var(--border);
+    border-radius:11px; outline:none; transition:border-color .15s, background .15s;
+  }
+  input:focus { border-color:var(--indigo-l); background:rgba(255,255,255,.09); }
+  .err { color:#FCA5A5; font-size:12.5px; min-height:18px; margin:10px 2px 0; }
+  button {
+    width:100%; margin-top:14px; padding:13px; font-size:14.5px; font-weight:700; color:#fff;
+    background:linear-gradient(135deg,var(--indigo),var(--indigo-l));
+    border:none; border-radius:11px; cursor:pointer; transition:transform .08s, filter .15s;
+  }
+  button:hover { filter:brightness(1.08); }
+  button:active { transform:translateY(1px); }
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="logo">
+      <div class="logo-ico">⚡</div>
+      <div class="title">ETF 퀀트봇</div>
+      <div class="sub">대시보드에 로그인하세요</div>
+    </div>
+    <label for="pw">비밀번호</label>
+    <input id="pw" type="password" placeholder="비밀번호 입력" autocomplete="current-password" autofocus>
+    <div id="err" class="err"></div>
+    <button onclick="doLogin()">대시보드 접속 →</button>
+  </div>
+<script>
+  async function doLogin() {
+    const pw  = document.getElementById('pw').value;
+    const err = document.getElementById('err');
+    err.textContent = '';
+    try {
+      const resp = await fetch('/api/auth', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({password: pw}),
+      });
+      if (resp.ok) {
+        location.replace('/');
+      } else {
+        err.textContent = '비밀번호가 올바르지 않습니다';
+        const el = document.getElementById('pw'); el.select(); el.focus();
+      }
+    } catch {
+      err.textContent = '서버 연결 오류';
+    }
+  }
+  document.getElementById('pw').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+</script>
+</body>
+</html>"""
+
+
 # ─────────────────────────────────────────────────────────────
 # FastAPI 서버
 # ─────────────────────────────────────────────────────────────
@@ -1244,21 +1340,71 @@ def _build_html(bot: "ETFQuantBot") -> str:
 def start_dashboard(bot: "ETFQuantBot", port: int = 8080) -> None:
     """대시보드 웹서버를 데몬 스레드로 시작"""
     try:
-        from fastapi import FastAPI
+        from fastapi import FastAPI, Body, Cookie, Query, Depends, HTTPException
         from fastapi.responses import HTMLResponse, JSONResponse
         import uvicorn
     except ImportError:
         logger.warning("[Dashboard] fastapi/uvicorn 미설치 → pip install fastapi uvicorn")
         return
 
+    import os
+    import secrets
+    import time as _time
+
+    # ── 비밀번호 / 토큰 세션 ────────────────────────────────
+    _password = os.getenv("DASHBOARD_SECRET", "")
+    if not _password:
+        _password = secrets.token_urlsafe(16)
+        logger.warning(
+            f"[Dashboard] DASHBOARD_SECRET 미설정 → 임시 비밀번호: {_password}\n"
+            "           .env에 DASHBOARD_SECRET=원하는비밀번호 를 추가하세요."
+        )
+
+    _tokens: dict[str, float] = {}   # token → 만료 timestamp
+
+    def _new_token() -> str:
+        tok = secrets.token_hex(32)
+        _tokens[tok] = _time.time() + 86400   # 24h
+        return tok
+
+    def _valid(tok: str) -> bool:
+        exp = _tokens.get(tok)
+        if not exp or _time.time() > exp:
+            _tokens.pop(tok, None)
+            return False
+        return True
+
+    def _require(
+        dash_token: str = Cookie(None),
+        token: str = Query(""),
+    ):
+        if not _valid(dash_token or token):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
     app = FastAPI(title="ETF 퀀트봇", docs_url=None, redoc_url=None)
 
     @app.get("/", response_class=HTMLResponse)
-    async def index():
+    async def index(
+        dash_token: str = Cookie(None),
+        token: str = Query(""),
+    ):
+        if not _valid(dash_token or token):
+            return HTMLResponse(_login_html())
         return _build_html(bot)
 
+    @app.post("/api/auth")
+    async def api_auth(password: str = Body("", embed=True)):
+        if secrets.compare_digest(password.encode("utf-8"), _password.encode("utf-8")):
+            resp = JSONResponse({"ok": True})
+            resp.set_cookie(
+                "dash_token", _new_token(),
+                max_age=86400, httponly=True, samesite="lax",
+            )
+            return resp
+        raise HTTPException(status_code=401, detail="Invalid password")
+
     @app.get("/api/status")
-    async def api_status():
+    async def api_status(_: None = Depends(_require)):
         try:
             balance = bot.broker.get_balance()
             risk_st = bot.guard.get_status()
@@ -1276,11 +1422,12 @@ def start_dashboard(bot: "ETFQuantBot", port: int = 8080) -> None:
                     for h in balance.holdings
                 ],
             }
-        except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=500)
+        except Exception:
+            logger.exception("[Dashboard] /api/status 오류")
+            return JSONResponse({"error": "Internal server error"}, status_code=500)
 
     @app.get("/api/performance")
-    async def api_performance():
+    async def api_performance(_: None = Depends(_require)):
         try:
             path = Path("data/cache/performance.json")
             if not path.exists():
@@ -1290,11 +1437,12 @@ def start_dashboard(bot: "ETFQuantBot", port: int = 8080) -> None:
                 "dates":  [h["date"][5:] for h in history],
                 "values": [h["nav"] for h in history],
             }
-        except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=500)
+        except Exception:
+            logger.exception("[Dashboard] /api/performance 오류")
+            return JSONResponse({"error": "Internal server error"}, status_code=500)
 
     @app.get("/api/target-weights")
-    async def api_target_weights():
+    async def api_target_weights(_: None = Depends(_require)):
         try:
             tw_path = Path("data/cache/last_target_weights.json")
             if not tw_path.exists():
@@ -1327,8 +1475,9 @@ def start_dashboard(bot: "ETFQuantBot", port: int = 8080) -> None:
             target  = [round(target_weights.get(t, 0.0) * 100, 1) for t in all_tickers]
             current = [round(current_weights.get(t, 0.0), 1)       for t in all_tickers]
             return {"labels": labels, "target": target, "current": current}
-        except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=500)
+        except Exception:
+            logger.exception("[Dashboard] /api/target-weights 오류")
+            return JSONResponse({"error": "Internal server error"}, status_code=500)
 
     def _run():
         config = uvicorn.Config(
