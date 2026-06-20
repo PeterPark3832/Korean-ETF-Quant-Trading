@@ -115,6 +115,8 @@ class TelegramCommandHandler:
                 params={"offset": self._offset, "timeout": timeout},
                 timeout=timeout + 5,
             )
+            if resp.status_code != 200:
+                return []
             data = resp.json()
             if data.get("ok"):
                 return data.get("result", [])
@@ -154,8 +156,9 @@ class TelegramCommandHandler:
                 self._cmd_report()
 
             else:
+                safe_cmd = cmd[:32].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 self.notifier.send_text(
-                    f"❓ 알 수 없는 명령어: <code>{text}</code>\n"
+                    f"❓ 알 수 없는 명령어: <code>{safe_cmd}</code>\n"
                     "/help 로 목록 확인"
                 )
         except Exception as e:

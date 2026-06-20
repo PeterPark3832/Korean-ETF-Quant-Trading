@@ -6,6 +6,8 @@ KIS 주문 / 잔고 / 계좌 조회 모듈
 """
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -123,14 +125,50 @@ class KISOrderManager:
     KIS 주문 / 잔고 관리
     """
 
+    # 잔고 캐시 TTL (초) - 시장 개장 시 동시 API 호출 방지
+    _BALANCE_TTL = 45.0
+
     def __init__(self, client: "KISClient"):
         self.client = client
         self._tr    = TR[client.mode]
+        self._balance_cache = None
+        self._balance_ts: float = 0.0
+        self._balance_lock = threading.Lock()
 
     # ── 잔고 조회 ──────────────────────────────────────
 
     def get_balance(self) -> AccountBalance:
-        """계좌 잔고 전체 조회 (페이지네이션 자동 처리)"""
+        """계좌 잔고 전체 조회 (45초 TTL 캐시 + 동시 호출 직렬화)"""
+        now = time.monotonic()
+        # Fast path: 캐시 유효 시 즉시 반환
+        if self._balance_cache is not None and (now - self._balance_ts) < self._BALANCE_TTL:
+            return self._balance_cache
+        # Slow path: 락 획득 후 재확인 (double-checked locking)
+        with self._balance_lock:
+            now = time.monotonic()
+            if self._balance_cache is not None and (now - self._balance_ts) < self._BALANCE_TTL:
+                return self._balance_cache
+            try:
+                result = self._fetch_balance()
+                self._balance_cache = result
+                self._balance_ts = time.monotonic()
+                return result
+            except Exception as e:
+                # KIS API 완전 실패 → 6시간 이내 캐시로 대체 (텔레그램 오류 알림 방지)
+                if self._balance_cache is not None:
+                    age_sec = time.monotonic() - self._balance_ts
+                    if age_sec < 6 * 3600:
+                        logger.warning(f"잔고 API 실패 ({e}) → 캐시 반환 (경과 {age_sec:.0f}초)")
+                        return self._balance_cache
+                raise
+
+    def invalidate_balance_cache(self) -> None:
+        """잔고 캐시 강제 무효화 (매수/매도 직후 호출)"""
+        with self._balance_lock:
+            self._balance_ts = 0.0
+
+    def _fetch_balance(self) -> AccountBalance:
+        """잔고 API 실제 호출 (페이지네이션 자동 처리)"""
         path   = "/uapi/domestic-stock/v1/trading/inquire-balance"
         tr_id  = self._tr["balance"]
 
@@ -153,14 +191,23 @@ class KISOrderManager:
                 "CTX_AREA_FK100": ctx_code,
                 "CTX_AREA_NK100": "",
             }
-            data = self.client._get(path, tr_id, params)
+            try:
+                data = self.client._get(path, tr_id, params)
+            except RuntimeError as e:
+                if page == 0:
+                    raise  # 첫 페이지 실패는 치명적
+                # 2번째 이후 페이지 실패 시 기존 데이터로 진행 (KIS 시장시간 중 cursor 제한)
+                logger.warning(f"잔고 {page+1}페이지 조회 실패 ({e}), 이전 데이터로 진행")
+                break
 
-            output1 = data.get("output1", [])
-            output2 = data.get("output2", [{}])
-            all_output1.extend(output1)
+            page_output1 = data.get("output1", [])
+            page_output2 = data.get("output2", [{}])
+            if page_output2 and page_output2[0]:  # 요약은 항상 최신 페이지 것으로 갱신
+                output2 = page_output2
+            all_output1.extend(page_output1)
 
             ctx_code = data.get("ctx_area_fk100", "").strip()
-            if not ctx_code or not output1:
+            if not ctx_code or not page_output1:
                 break
         else:
             logger.warning(f"잔고 조회: 최대 페이지({MAX_PAGES}) 도달")
@@ -247,6 +294,8 @@ class KISOrderManager:
             qty=qty, price=price, order_no=output.get("ODNO", ""), 
             message=data.get("msg1", ""), raw=data,
         )
+        if success:
+            self.invalidate_balance_cache()
         (logger.info if success else logger.error)(str(result))
         return result
 
@@ -271,6 +320,8 @@ class KISOrderManager:
             qty=qty, price=price, order_no=output.get("ODNO", ""), 
             message=data.get("msg1", ""), raw=data,
         )
+        if success:
+            self.invalidate_balance_cache()
         (logger.info if success else logger.error)(str(result))
         return result
 

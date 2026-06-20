@@ -36,6 +36,39 @@ load_dotenv()
 KST = ZoneInfo("Asia/Seoul")
 
 
+def _save_rebalance_result(result, is_dry_run: bool = False) -> None:
+    """리밸런싱 결과를 JSON으로 저장 — 대시보드 결과 표시용"""
+    import json as _json
+    try:
+        data = {
+            "status":         "done",
+            "is_dry_run":     is_dry_run,
+            "executed_at":    result.executed_at,
+            "total_assets":   result.total_assets,
+            "success_count":  result.success_count,
+            "fail_count":     result.fail_count,
+            "skipped_count":  result.skipped_count,
+            "total_turnover": round(result.total_turnover * 100, 2),
+            "orders": [
+                {
+                    "ticker": o.ticker, "name": o.name, "side": o.side,
+                    "qty": o.qty, "price": o.price,
+                    "cur_w": round(o.current_weight * 100, 1),
+                    "tgt_w": round(o.target_weight * 100, 1),
+                }
+                for o in result.orders
+            ],
+        }
+        p = Path("data/cache/last_rebalance.json")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(_json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(p)
+    except Exception as _e:
+        from loguru import logger as _log
+        _log.warning(f"리밸런싱 결과 저장 실패: {_e}")
+
+
 def _save_target_weights_json(weights) -> None:
     """목표 비중을 JSON으로 저장 — 대시보드 비중 차트용"""
     import json
@@ -46,7 +79,9 @@ def _save_target_weights_json(weights) -> None:
             "updated_at": datetime.now().isoformat(),
             "weights": {k: float(v) for k, v in weights.items() if float(v) > 0.001},
         }
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(path)
     except Exception as e:
         from loguru import logger as _log
         _log.warning(f"목표 비중 저장 실패: {e}")
@@ -87,13 +122,13 @@ class ETFQuantBot:
     def __init__(
         self,
         broker_mode: str  = None,    # None이면 .env KIS_MODE 사용
-        strategy_name: str = "dual_momentum",
+        strategy_name: str = "kr_gem",
         dry_run: bool = False,
     ):
         from broker import create_broker
         from strategy import (
             DualMomentumStrategy, VAAStrategy, RiskParityStrategy,
-            MultiStrategyPortfolio, FactorMomentumStrategy,
+            MultiStrategyPortfolio, FactorMomentumStrategy, KRGemStrategy,
         )
         from risk.guard import RiskGuard
         from notifier import Notifier
@@ -125,6 +160,7 @@ class ETFQuantBot:
             "vaa":             VAAStrategy(top_n_offensive=2, offensive_ratio=0.70, canary_threshold=1),
             "risk_parity":     RiskParityStrategy(vol_window=60, target_vol=0.10, momentum_filter=True),
             "factor_momentum": FactorMomentumStrategy(top_n_per_class=1, score_threshold=0.0),
+            "kr_gem":          KRGemStrategy(top_n=3),
             "multi":           MultiStrategyPortfolio(
                                    dm_kwargs          = {"lookback_months": 12, "skip_months": 1},
                                    vaa_kwargs         = {"top_n_offensive": 2, "offensive_ratio": 0.70},
@@ -236,6 +272,9 @@ class ETFQuantBot:
             # 5. 결과 알림
             self.notifier.send_rebalance_report(result, self.strategy_name)
             logger.info(f"월간 리밸런싱 완료: 성공={result.success_count} 실패={result.fail_count}")
+
+            # 6-0. 결과를 JSON 파일로 저장 (대시보드용)
+            _save_rebalance_result(result, is_dry_run=self.dry_run)
 
             # 6. 미체결 주문 확인 및 취소 (3분 후)
             if not self.dry_run:

@@ -43,6 +43,10 @@ ETF_UNIVERSE = {
         "261220": "TIGER 원유선물Enhanced(H)",
         "144600": "KODEX 은선물(H)",
     },
+    # 섹터 (kr_gem 전략 전용 — 반도체 모멘텀 슬롯)
+    "SECTOR": {
+        "091160": "KODEX 반도체",
+    },
     # 현금성 (MMF 대용)
     "CASH": {
         "449170": "KODEX KOFR금리액티브(합성)",
@@ -62,6 +66,7 @@ ASSET_CLASS_CONSTRAINTS = {
     "BOND":          {"min": 0.10, "max": 0.60},
     "COMMODITY":     {"min": 0.00, "max": 0.20},
     "CASH":          {"min": 0.05, "max": 0.40},
+    "SECTOR":        {"min": 0.00, "max": 0.15},
 }
 
 # ── 리밸런싱 ──────────────────────────────────────────

@@ -29,7 +29,7 @@ from data.fetcher import ETFDataFetcher
 from backtest.engine import BacktestEngine
 from backtest.walk_forward import WalkForwardValidator
 from backtest.metrics import calculate_metrics
-from strategy import DualMomentumStrategy, VAAStrategy, RiskParityStrategy
+from strategy import DualMomentumStrategy, VAAStrategy, RiskParityStrategy, KRGemStrategy
 from reports.plotter import plot_backtest_result, plot_strategy_comparison
 
 
@@ -69,6 +69,7 @@ def run_all_strategies(
         "듀얼 모멘텀":   DualMomentumStrategy(lookback_months=12, skip_months=1),
         "VAA-KR":        VAAStrategy(top_n_offensive=2, offensive_ratio=0.70, canary_threshold=1),
         "리스크 패리티": RiskParityStrategy(vol_window=60, target_vol=0.10, momentum_filter=True),
+        "KR GEM":        KRGemStrategy(top_n=3),
     }
 
     engine  = BacktestEngine(prices, initial_capital=INITIAL_CAPITAL)
@@ -136,6 +137,7 @@ def run_walk_forward(
         "dual_momentum": DualMomentumStrategy(),
         "vaa":           VAAStrategy(top_n_offensive=2, offensive_ratio=0.70, canary_threshold=1),
         "risk_parity":   RiskParityStrategy(vol_window=60, target_vol=0.10, momentum_filter=True),
+        "kr_gem":        KRGemStrategy(top_n=3),
     }
 
     if strategy_name not in strategy_map:
@@ -192,6 +194,7 @@ def main():
                 "dual_momentum": DualMomentumStrategy(),
                 "vaa":           VAAStrategy(top_n_offensive=2, offensive_ratio=0.70, canary_threshold=1),
                 "risk_parity":   RiskParityStrategy(vol_window=60, target_vol=0.10, momentum_filter=True),
+                "kr_gem":        KRGemStrategy(top_n=3),
             }
             if args.strategy not in strategy_map:
                 logger.error(f"알 수 없는 전략: {args.strategy}")
