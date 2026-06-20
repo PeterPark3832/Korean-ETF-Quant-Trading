@@ -163,7 +163,9 @@ data/fetcher.py → prices: pd.DataFrame(index=date, columns=ticker)
 | `data/cache/*.parquet` | ETF OHLCV 가격 | 1일 |
 | `data/cache/risk_state.json` | 리스크 상태 (peak, MDD, halt) | 영구 |
 | `data/cache/performance.json` | NAV 이력 | 90일 롤링 |
-| `data/cache/.kis_token.json` | KIS OAuth2 토큰 | 24시간 |
+| `data/cache/.kis_token.json` | KIS OAuth2 토큰 (원자적 쓰기 + `chmod 0600`) | 24시간 |
+| `data/cache/last_target_weights.json` | 최근 목표 비중 (대시보드 차트) | 리밸런싱마다 |
+| `data/cache/last_rebalance.json` | 최근 리밸런싱 결과 (대시보드 패널) | 리밸런싱마다 |
 
 ---
 
@@ -174,7 +176,7 @@ tests/
 ├── conftest.py           # 공통 픽스처 (샘플 가격 데이터)
 ├── test_utils.py         # utils/market.py — KRX 호가단위
 ├── test_metrics.py       # backtest/metrics.py — 성과 지표
-├── test_strategies.py    # 5개 전략 — 공통 계약 검증
+├── test_strategies.py    # 6개 전략 — 공통 계약 검증
 ├── test_risk_guard.py    # risk/guard.py — 리스크 상태 머신
 └── test_backtest_engine.py  # backtest/engine.py — 시뮬레이션
 ```
@@ -207,7 +209,8 @@ config.py ←── strategy/*.py
 
 utils/market.py ←── portfolio/rebalancer.py
 
-strategy/base.py ←── strategy/dual_momentum.py
+strategy/base.py ←── strategy/kr_gem.py        (기본 전략, SECTOR 자산군 사용)
+                 ←── strategy/dual_momentum.py
                  ←── strategy/vaa.py
                  ←── strategy/risk_parity.py
                  ←── strategy/multi_strategy.py

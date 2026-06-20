@@ -6,13 +6,15 @@ Korean ETF Quant Trading Bot의 향후 개발 계획입니다.
 
 ## 현재 버전 (v1.x) — 완료된 기능
 
-- [x] 5종 전략 구현 (DualMomentum, VAA-KR, RiskParity, FactorMomentum, MultiStrategy)
+- [x] 6종 전략 구현 (KR GEM, DualMomentum, VAA-KR, RiskParity, FactorMomentum, MultiStrategy)
+- [x] KR GEM 한국·미국 멀티에셋 모멘텀 전략 + 기본 전략 채택 (SECTOR 자산군 추가)
 - [x] S&P500 200일 MA 기반 시장 국면 감지
 - [x] KIS API 연동 (실전·모의, OAuth2 자동 갱신)
 - [x] 페이퍼 트레이딩 (수수료·슬리피지·틱 시뮬레이션)
 - [x] Walk-Forward 백테스트 검증
 - [x] Telegram 명령 인터페이스
-- [x] FastAPI 웹 대시보드
+- [x] FastAPI 웹 대시보드 + 비밀번호 토큰 인증(`DASHBOARD_SECRET`) + 수동 리밸런싱 버튼
+- [x] KIS 토큰 캐시 보안 강화 (원자적 쓰기·`chmod 0600`·Content-Type 검증)
 - [x] 리스크 관리 (MDD, 일간손실, 연속손실, 출금 방어)
 - [x] 유닛 테스트 53개 (strategy, metrics, risk_guard, backtest_engine, utils)
 - [x] KIS 재시도 로직 통합 (`_request_with_retry`)
