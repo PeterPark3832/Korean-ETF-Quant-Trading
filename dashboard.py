@@ -670,6 +670,51 @@ button { font-family: inherit; cursor: pointer; border: none; outline: none; }
 }
 .login-btn:hover  { opacity: .88; }
 .login-btn:active { transform: scale(.98); }
+
+/* ── 리밸런싱 FAB + 모달 (전 레이아웃 공통, 미디어쿼리 밖) ── */
+#rb-fab {
+  position: fixed; right: 18px; bottom: 18px; z-index: 900;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+}
+#rb-fab button {
+  border: none; border-radius: 999px; cursor: pointer; font-family: inherit;
+  font-weight: 700; box-shadow: 0 8px 22px rgba(0,0,0,.28);
+  display: inline-flex; align-items: center; gap: 7px; transition: transform .08s, filter .15s;
+}
+#rb-fab button:active { transform: scale(.96); }
+#rb-fab .fab-main { background: #059669; color: #fff; padding: 14px 22px; font-size: 14px; }
+#rb-fab .fab-main:hover { filter: brightness(1.07); }
+#rb-fab .fab-dry  { background: #fff; color: #334155; border: 1px solid #e2e8f0; padding: 9px 16px; font-size: 12px; }
+@media (min-width: 1024px) { #rb-fab { display: none; } }   /* 데스크톱은 상단바 버튼 사용 */
+
+#rb-modal {
+  position: fixed; inset: 0; z-index: 1000; display: none;
+  align-items: center; justify-content: center; padding: 18px;
+  background: rgba(15,23,42,.55); backdrop-filter: blur(3px);
+}
+#rb-modal.show { display: flex; }
+#rb-modal .rbm-card {
+  background: #fff; border-radius: 16px; width: 100%; max-width: 580px;
+  max-height: 88vh; overflow: auto; box-shadow: 0 24px 64px rgba(0,0,0,.4);
+}
+.rbm-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #eef2f7; }
+.rbm-title { font-size: 15px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.rbm-meta { font-size: 12px; color: #64748b; margin-top: 3px; }
+.rbm-close { background: none; border: none; font-size: 20px; color: #94a3b8; cursor: pointer; padding: 2px 6px; line-height: 1; }
+.rbm-body { padding: 16px 20px; }
+.rbm-stats { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 14px; }
+.rbm-stat { flex: 1; min-width: 64px; }
+.rbm-stat-val { font-size: 19px; font-weight: 800; letter-spacing: -.02em; }
+.rbm-stat-lbl { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+.rbm-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.rbm-tbl th { text-align: left; padding: 8px 6px; font-size: 10px; color: #94a3b8; text-transform: uppercase; border-bottom: 1px solid #eef2f7; }
+.rbm-tbl td { padding: 9px 6px; border-bottom: 1px solid #f1f5f9; }
+.rbm-badge { background: #FEF3C7; color: #92400E; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+.rbm-empty { padding: 22px 4px; color: #64748b; font-size: 13px; text-align: center; }
+.rbm-side-buy  { color: #059669; font-weight: 700; }
+.rbm-side-sell { color: #DC2626; font-weight: 700; }
+.rbm-spin { display: inline-block; animation: rbspin 1s linear infinite; }
+@keyframes rbspin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -690,6 +735,17 @@ button { font-family: inherit; cursor: pointer; border: none; outline: none; }
     <div id="login-err" class="login-err"></div>
     <button class="login-btn" onclick="doLogin()">대시보드 접속 →</button>
   </div>
+</div>
+
+<!-- 리밸런싱 FAB (태블릿·모바일 — 데스크톱은 상단바 버튼) -->
+<div id="rb-fab">
+  <button class="fab-dry" onclick="triggerRebalance(true)">드라이런</button>
+  <button class="fab-main" onclick="confirmRebalance()">⟳ 리밸런싱</button>
+</div>
+
+<!-- 리밸런싱 결과 모달 (전 레이아웃 공통) -->
+<div id="rb-modal" onclick="if(event.target===this)rbClose()">
+  <div class="rbm-card" id="rb-modal-card"></div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════
@@ -1191,24 +1247,32 @@ function confirmRebalance() {
   if (confirm('⚠️ 실제 주문이 발생합니다.\n리밸런싱을 실행할까요?')) triggerRebalance(false);
 }
 
+function rbShow(html) {
+  document.getElementById('rb-modal-card').innerHTML = html;
+  document.getElementById('rb-modal').classList.add('show');
+}
+function rbClose() {
+  document.getElementById('rb-modal').classList.remove('show');
+}
+
 async function triggerRebalance(dryRun) {
-  const panel = document.getElementById('rb-result-panel'); if(!panel) return;
-  panel.style.display = '';
-  panel.innerHTML = `<div class="rb-panel rb-run"><div class="rb-header">
-    <div><div class="rb-title"><span class="spin">⏳</span> ${dryRun?'[드라이런] ':''}리밸런싱 실행 중...</div>
-    <div class="rb-meta">전략 신호 계산 및 주문 처리 중입니다</div></div></div></div>`;
+  rbShow(`<div class="rbm-head"><div>
+      <div class="rbm-title"><span class="rbm-spin">⏳</span> ${dryRun?'[드라이런] ':''}리밸런싱 실행 중...</div>
+      <div class="rbm-meta">전략 신호 계산 및 주문 처리 중입니다</div></div>
+    </div>`);
   try {
     const resp = await authFetch('/api/rebalance?dry_run='+dryRun, {method:'POST'});
     const data = await resp.json();
     if (data.status === 'already_running') {
-      panel.innerHTML = `<div class="rb-panel rb-run"><div class="rb-header">
-        <div class="rb-title">⏳ 이미 실행 중입니다</div></div></div>`;
+      rbShow(`<div class="rbm-head"><div class="rbm-title">⏳ 이미 실행 중입니다</div>
+        <button class="rbm-close" onclick="rbClose()">✕</button></div>`);
     }
     pollRebalanceResult(0);
   } catch(e) {
-    panel.innerHTML = `<div class="rb-panel rb-err"><div class="rb-header">
-      <div><div class="rb-title">❌ 요청 실패</div>
-      <div class="rb-meta">${e.message}</div></div></div></div>`;
+    rbShow(`<div class="rbm-head"><div>
+        <div class="rbm-title">❌ 요청 실패</div>
+        <div class="rbm-meta">${(e&&e.message)||'네트워크 오류'}</div></div>
+      <button class="rbm-close" onclick="rbClose()">✕</button></div>`);
   }
 }
 
@@ -1223,60 +1287,47 @@ async function pollRebalanceResult(attempt) {
 }
 
 function renderRebalanceResult(d) {
-  const panel = document.getElementById('rb-result-panel'); if(!panel) return;
   const isDry = d.is_dry_run, isErr = d.status==='error';
-  const cls   = isErr?'rb-err':(isDry?'rb-dry':'');
   const icon  = isErr?'❌':(isDry?'📊':'✅');
-  const badge = isDry
-    ? `<span style="background:var(--amber-bg);color:#92400E;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">DRY RUN</span>`
-    : '';
+  const badge = isDry ? `<span class="rbm-badge">DRY RUN</span>` : '';
   const dt = d.executed_at ? d.executed_at.replace('T',' ').slice(0,16) : '';
 
   if (isErr) {
-    panel.innerHTML = `<div class="rb-panel rb-err"><div class="rb-header">
-      <div><div class="rb-title">${icon} 리밸런싱 오류 ${badge}</div>
-      <div class="rb-meta">${d.error||''} · ${dt}</div></div>
-      <button onclick="document.getElementById('rb-result-panel').style.display='none'"
-        style="background:none;color:var(--text-3);font-size:18px;padding:4px;cursor:pointer">✕</button>
-    </div></div>`; return;
+    rbShow(`<div class="rbm-head"><div>
+        <div class="rbm-title">${icon} 리밸런싱 오류 ${badge}</div>
+        <div class="rbm-meta">${d.error||''} · ${dt}</div></div>
+      <button class="rbm-close" onclick="rbClose()">✕</button></div>`);
+    return;
   }
 
   const orderRows = (d.orders||[]).map(o => {
-    const sh = o.side==='buy' ? "<span class='side-buy'>▲ 매수</span>" : "<span class='side-sell'>▼ 매도</span>";
+    const sh = o.side==='buy' ? "<span class='rbm-side-buy'>▲ 매수</span>" : "<span class='rbm-side-sell'>▼ 매도</span>";
     return `<tr>
-      <td><div style="font-weight:600">${o.name}</div><div style="font-size:10px;color:var(--text-4)">${o.ticker}</div></td>
+      <td><div style="font-weight:600">${o.name}</div><div style="font-size:10px;color:#94a3b8">${o.ticker}</div></td>
       <td>${sh}</td><td>${o.qty.toLocaleString()}주</td><td>${o.price.toLocaleString()}원</td>
-      <td><span style="color:var(--text-3)">${o.cur_w}%</span> → <b>${o.tgt_w}%</b></td>
+      <td><span style="color:#94a3b8">${o.cur_w}%</span> → <b>${o.tgt_w}%</b></td>
       <td style="font-weight:700">${(o.tgt_w-o.cur_w)>=0?'+':''}${(o.tgt_w-o.cur_w).toFixed(1)}%</td>
     </tr>`;
   }).join('');
 
-  panel.innerHTML = `<div class="rb-panel ${cls}">
-    <div class="rb-header">
-      <div><div class="rb-title">${icon} 리밸런싱 완료 ${badge}</div>
-      <div class="rb-meta">실행시각: ${dt}</div></div>
-      <button onclick="document.getElementById('rb-result-panel').style.display='none'"
-        style="background:none;color:var(--text-3);font-size:18px;padding:4px;cursor:pointer">✕</button>
+  rbShow(`<div class="rbm-head">
+      <div><div class="rbm-title">${icon} 리밸런싱 완료 ${badge}</div>
+      <div class="rbm-meta">실행시각: ${dt}</div></div>
+      <button class="rbm-close" onclick="rbClose()">✕</button>
     </div>
-    <div class="rb-stats">
-      <div class="rb-stat"><div class="rb-stat-val" style="color:var(--green)">${d.success_count}</div><div class="rb-stat-lbl">성공</div></div>
-      <div class="rb-stat"><div class="rb-stat-val" style="color:${d.fail_count>0?'var(--red)':'var(--text-4)'}">${d.fail_count}</div><div class="rb-stat-lbl">실패</div></div>
-      <div class="rb-stat"><div class="rb-stat-val" style="color:var(--text-3)">${d.skipped_count}</div><div class="rb-stat-lbl">스킵</div></div>
-      <div class="rb-stat"><div class="rb-stat-val">${d.total_turnover?.toFixed(1)??0}%</div><div class="rb-stat-lbl">회전율</div></div>
-      <div class="rb-stat"><div class="rb-stat-val">${((d.total_assets||0)/10000).toFixed(0)}만원</div><div class="rb-stat-lbl">총자산</div></div>
-    </div>
-    ${(d.orders||[]).length>0
-      ? `<table class="rb-tbl"><thead><tr><th>종목</th><th>방향</th><th>수량</th><th>가격</th><th>비중 변화</th><th>차이</th></tr></thead><tbody>${orderRows}</tbody></table>`
-      : `<div style="padding:24px 20px;color:var(--text-3);font-size:13px">리밸런싱 불필요 — 모든 비중이 임계값(±3%) 이내입니다</div>`}
-  </div>`;
+    <div class="rbm-body">
+      <div class="rbm-stats">
+        <div class="rbm-stat"><div class="rbm-stat-val" style="color:#059669">${d.success_count}</div><div class="rbm-stat-lbl">성공</div></div>
+        <div class="rbm-stat"><div class="rbm-stat-val" style="color:${d.fail_count>0?'#DC2626':'#94a3b8'}">${d.fail_count}</div><div class="rbm-stat-lbl">실패</div></div>
+        <div class="rbm-stat"><div class="rbm-stat-val" style="color:#94a3b8">${d.skipped_count}</div><div class="rbm-stat-lbl">스킵</div></div>
+        <div class="rbm-stat"><div class="rbm-stat-val">${d.total_turnover?.toFixed(1)??0}%</div><div class="rbm-stat-lbl">회전율</div></div>
+        <div class="rbm-stat"><div class="rbm-stat-val">${((d.total_assets||0)/10000).toFixed(0)}만원</div><div class="rbm-stat-lbl">총자산</div></div>
+      </div>
+      ${(d.orders||[]).length>0
+        ? `<table class="rbm-tbl"><thead><tr><th>종목</th><th>방향</th><th>수량</th><th>가격</th><th>비중</th><th>차이</th></tr></thead><tbody>${orderRows}</tbody></table>`
+        : `<div class="rbm-empty">리밸런싱 불필요 — 모든 비중이 임계값(±3%) 이내입니다</div>`}
+    </div>`);
 }
-
-(async function loadLastResult() {
-  try {
-    const d = await authFetch('/api/rebalance-result').then(r=>r.json());
-    if (d && d.status!=='none' && d.status!=='running') renderRebalanceResult(d);
-  } catch {}
-})();
 
 /* Desktop sidebar */
 (function() {
