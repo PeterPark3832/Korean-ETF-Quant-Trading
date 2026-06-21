@@ -686,6 +686,7 @@ button { font-family: inherit; cursor: pointer; border: none; outline: none; }
 #rb-fab .fab-main:hover { filter: brightness(1.07); }
 #rb-fab .fab-dry  { background: #fff; color: #334155; border: 1px solid #e2e8f0; padding: 9px 16px; font-size: 12px; }
 @media (min-width: 1024px) { #rb-fab { display: none; } }   /* 데스크톱은 상단바 버튼 사용 */
+@media (max-width: 639px)  { #rb-fab { bottom: calc(var(--tab-h) + 16px); } }  /* 모바일 하단 탭바 위로 */
 
 #rb-modal {
   position: fixed; inset: 0; z-index: 1000; display: none;
