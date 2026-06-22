@@ -1801,6 +1801,11 @@ def start_dashboard(bot: "ETFQuantBot", port: int = 8080) -> None:
             if not path.exists():
                 return {"dates": [], "values": []}
             history = json.loads(path.read_text(encoding="utf-8"))
+            # 중간 출금 등으로 NAV가 왜곡되는 구간을 잘라내기 위한 시작일 컷오프.
+            # DASHBOARD_NAV_START=YYYY-MM-DD (미설정 시 전체 표시)
+            nav_start = os.getenv("DASHBOARD_NAV_START", "")
+            if nav_start:
+                history = [h for h in history if h.get("date", "") >= nav_start]
             return {
                 "dates":  [h["date"][5:] for h in history],
                 "values": [h["nav"] for h in history],
