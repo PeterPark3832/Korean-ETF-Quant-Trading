@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable
@@ -34,6 +35,11 @@ _BUY_CASH_RATIO = 0.99
 _KIS_AVAILABLE_RATIO = 0.98
 # 브로커별 기본 가용현금 비율 (API 없는 경우)
 _DEFAULT_AVAILABLE_RATIO = 0.95
+
+# 매도 체결 후 예수금 반영 대기 (한 번의 리밸런싱으로 매수까지 완료시키기 위함)
+_SELL_SETTLE_TIMEOUT  = 30.0   # 최대 대기 시간(초)
+_SELL_SETTLE_INTERVAL = 2.0    # 가용현금 폴링 간격(초)
+_SELL_SETTLE_TARGET   = 0.8    # 예상 매도대금의 80%가 반영되면 매수 진행
 
 
 @dataclass
@@ -128,9 +134,10 @@ class PortfolioRebalancer:
         # API 실시간 주문가능조회(ord_psbl)를 비교하여 큰 값을 가용 현금으로 사용
         if hasattr(self.broker, "get_available_cash"):
             ord_psbl = self.broker.get_available_cash()
-            target_cash = max(balance.cash, ord_psbl)
-            available_cash = int(target_cash * _KIS_AVAILABLE_RATIO)
+            pre_sell_raw_cash = max(balance.cash, ord_psbl)   # 매도 전 가용현금(원본)
+            available_cash = int(pre_sell_raw_cash * _KIS_AVAILABLE_RATIO)
         else:
+            pre_sell_raw_cash = balance.cash
             available_cash = int(balance.cash * _DEFAULT_AVAILABLE_RATIO)
 
         logger.info(
@@ -179,55 +186,80 @@ class PortfolioRebalancer:
             logger.info("리밸런싱 불필요 (모든 비중 임계값 이내)")
             return result
 
-        # ── 5. 주문 실행 (매도 먼저) ──────────────────
+        # ── 5. 주문 실행 (매도 먼저 → 체결 대기 → 매수) ──────
         sell_orders = [o for o in orders if o.side == "sell"]
         buy_orders  = [o for o in orders if o.side == "buy"]
 
         exec_cash = available_cash   # 실행 중 잔여 매수가능금액 추적
 
-        for order in sell_orders + buy_orders:
+        # ── 5-1. 매도 실행 ────────────────────────────
+        filled_sell_amount = 0   # 체결 예상 대금(매수 대기 목표 산정용)
+        for order in sell_orders:
             if self.dry_run:
                 logger.info(
-                    f"[DRY RUN] {order.side} {ALL_ETFS.get(order.ticker, order.ticker)} "
+                    f"[DRY RUN] sell {ALL_ETFS.get(order.ticker, order.ticker)} "
+                    f"{order.qty}주 @ {order.price:,}원"
+                )
+                result.success_count += 1
+                filled_sell_amount += order.qty * order.price
+                continue
+
+            res = self.broker.order_sell(order.ticker, order.qty, price=0)
+            if res.success:
+                result.success_count += 1
+                filled_sell_amount += order.qty * order.price
+            else:
+                result.fail_count += 1
+                logger.error(f"주문 실패: {res}")
+
+        # ── 5-2. 매도 체결로 예수금이 반영될 때까지 대기 ──────
+        #   대기하지 않으면 매도 대금이 주문가능금액에 안 잡혀
+        #   매수가 누락되고, 리밸런싱을 여러 번 돌려야 한다.
+        if not self.dry_run and sell_orders and buy_orders:
+            expected_proceeds = filled_sell_amount * (1 - TRANSACTION_COST)
+            exec_cash = self._wait_for_sell_settlement(
+                pre_sell_raw_cash, expected_proceeds
+            )
+
+        # ── 5-3. 매수 실행 ────────────────────────────
+        for order in buy_orders:
+            if self.dry_run:
+                logger.info(
+                    f"[DRY RUN] buy {ALL_ETFS.get(order.ticker, order.ticker)} "
                     f"{order.qty}주 @ {order.price:,}원"
                 )
                 result.success_count += 1
                 continue
 
-            if order.side == "sell":
-                res = self.broker.order_sell(order.ticker, order.qty, price=0)
-            else:
-                # 지정가 매수: 호가단위 올림 처리
-                buy_price = _tick_price(order.price, "up")
-                qty = order.qty
-                safe_exec_cash = exec_cash * _BUY_CASH_RATIO
+            # 지정가 매수: 호가단위 올림 처리
+            buy_price = _tick_price(order.price, "up")
+            qty = order.qty
+            safe_exec_cash = exec_cash * _BUY_CASH_RATIO
 
-                if hasattr(self.broker, "get_max_buy_qty"):
-                    try:
-                        max_qty = self.broker.get_max_buy_qty(order.ticker, buy_price)
-                        if max_qty > 0:
-                            qty = min(qty, max_qty)
-                            logger.info(f"[{order.ticker}] 주문가능수량: {max_qty}주 → 주문: {qty}주")
-                        else:
-                            qty = min(qty, int(safe_exec_cash / buy_price))
-                            logger.info(
-                                f"[{order.ticker}] max_qty=0 → 잔여현금({safe_exec_cash:,.0f}원) 기준 {qty}주"
-                            )
-                    except Exception as e:
-                        logger.warning(f"[{order.ticker}] 주문가능수량 조회 실패: {e}")
+            if hasattr(self.broker, "get_max_buy_qty"):
+                try:
+                    max_qty = self.broker.get_max_buy_qty(order.ticker, buy_price)
+                    if max_qty > 0:
+                        qty = min(qty, max_qty)
+                        logger.info(f"[{order.ticker}] 주문가능수량: {max_qty}주 → 주문: {qty}주")
+                    else:
                         qty = min(qty, int(safe_exec_cash / buy_price))
+                        logger.info(
+                            f"[{order.ticker}] max_qty=0 → 잔여현금({safe_exec_cash:,.0f}원) 기준 {qty}주"
+                        )
+                except Exception as e:
+                    logger.warning(f"[{order.ticker}] 주문가능수량 조회 실패: {e}")
+                    qty = min(qty, int(safe_exec_cash / buy_price))
 
-                if qty <= 0:
-                    logger.info(f"[{order.ticker}] 매수가능 수량 없음 → 스킵")
-                    result.skipped_count += 1
-                    continue
+            if qty <= 0:
+                logger.info(f"[{order.ticker}] 매수가능 수량 없음 → 스킵")
+                result.skipped_count += 1
+                continue
 
-                res = self.broker.order_buy(order.ticker, qty, price=buy_price, order_type="00")
-                if res.success:
-                    exec_cash = max(0, exec_cash - qty * buy_price)
-
+            res = self.broker.order_buy(order.ticker, qty, price=buy_price, order_type="00")
             if res.success:
                 result.success_count += 1
+                exec_cash = max(0, exec_cash - qty * buy_price)
             else:
                 result.fail_count += 1
                 logger.error(f"주문 실패: {res}")
@@ -240,6 +272,43 @@ class PortfolioRebalancer:
         return result
 
     # ── 내부 메서드 ────────────────────────────────────
+
+    def _wait_for_sell_settlement(
+        self,
+        pre_sell_raw_cash: float,
+        expected_proceeds: float,
+    ) -> int:
+        """매도 체결로 예수금이 반영될 때까지 대기 후 갱신된 가용현금 반환.
+
+        시장가 매도는 보통 수 초 내 체결되지만 KIS 주문가능금액(ord_psbl_cash)
+        반영에 지연이 있다. 대기 없이 곧장 매수하면 가용현금이 부족하게 인식돼
+        매수가 누락되고, 리밸런싱을 여러 번 반복 실행해야 하는 문제가 생긴다.
+        """
+        # API 미지원(페이퍼 등) → 매도 대금을 즉시 가용현금에 반영
+        if not hasattr(self.broker, "get_available_cash"):
+            return int((pre_sell_raw_cash + expected_proceeds) * _DEFAULT_AVAILABLE_RATIO)
+
+        target_cash = pre_sell_raw_cash + expected_proceeds * _SELL_SETTLE_TARGET
+        deadline = time.time() + _SELL_SETTLE_TIMEOUT
+        latest = self.broker.get_available_cash()
+
+        while latest < target_cash and time.time() < deadline:
+            logger.info(
+                f"매도 체결 대기 중… 가용현금 {latest:,.0f}원 "
+                f"(목표 {target_cash:,.0f}원)"
+            )
+            time.sleep(_SELL_SETTLE_INTERVAL)
+            latest = self.broker.get_available_cash()
+
+        if latest >= target_cash:
+            logger.info(f"매도 체결 확인 — 가용현금 갱신: {latest:,.0f}원")
+        else:
+            logger.warning(
+                f"매도 체결 대기 타임아웃({_SELL_SETTLE_TIMEOUT:.0f}s) — "
+                f"현재 가용현금 {latest:,.0f}원으로 매수 진행"
+            )
+
+        return int(latest * _KIS_AVAILABLE_RATIO)
 
     def _get_current_weights(
         self, balance, total_assets: float
