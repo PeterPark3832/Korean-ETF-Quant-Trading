@@ -66,6 +66,19 @@ def _acquire_lock() -> bool:
     return True
 
 
+def _validate_env(mode: str) -> None:
+    """KIS API 모드 실행 시 필수 환경변수 누락을 시작 시점에 명확히 알리고 종료."""
+    if mode not in ("kis_paper", "kis_real"):
+        return
+    missing = [k for k in ("KIS_APP_KEY", "KIS_APP_SECRET", "KIS_ACCOUNT_NO") if not os.getenv(k)]
+    if missing:
+        logger.error(
+            f"[환경변수 누락] {', '.join(missing)} 미설정 — KIS API 모드({mode})에는 필수입니다.\n"
+            ".env 파일에 키를 입력하거나 환경 변수로 설정한 뒤 다시 실행하세요."
+        )
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="ETF 퀀트봇",
@@ -102,6 +115,8 @@ def main():
 
     setup_logger()
     Path("logs").mkdir(exist_ok=True)
+
+    _validate_env(args.mode or os.getenv("KIS_MODE", "paper"))
 
     # 봇 생성
     bot = ETFQuantBot(

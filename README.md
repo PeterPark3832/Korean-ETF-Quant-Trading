@@ -91,7 +91,7 @@ Korean-ETF-Quant-Trading/
 ├── data/              # pykrx/FinanceDataReader + 캐시
 ├── utils/             # 공유 유틸리티 (KRX 호가단위 등)
 ├── reports/           # 성과 리포트 + 차트
-├── tests/             # pytest 유닛 테스트 (78개)
+├── tests/             # pytest 유닛 테스트 (84개)
 ├── scheduler.py       # APScheduler 오케스트레이션
 ├── dashboard.py       # FastAPI 웹 대시보드
 ├── notifier.py        # Telegram 알림
@@ -217,7 +217,7 @@ python run_backtest.py [--strategy all|kr_gem|dual_momentum|vaa|risk_parity]
 ## 테스트
 
 ```bash
-# 전체 유닛 테스트 (78개)
+# 전체 유닛 테스트 (84개)
 python -m pytest tests/ -v
 
 # 특정 모듈만 테스트
