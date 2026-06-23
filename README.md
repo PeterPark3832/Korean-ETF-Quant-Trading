@@ -3,7 +3,7 @@
 한국 ETF 기반 퀀트 자동매매 시스템 — 멀티 전략 포트폴리오 + 실시간 리스크 관리
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-53%20passed-brightgreen.svg)](tests/)
+[![Tests](https://github.com/PeterPark3832/Korean-ETF-Quant-Trading/actions/workflows/tests.yml/badge.svg)](https://github.com/PeterPark3832/Korean-ETF-Quant-Trading/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -91,7 +91,7 @@ Korean-ETF-Quant-Trading/
 ├── data/              # pykrx/FinanceDataReader + 캐시
 ├── utils/             # 공유 유틸리티 (KRX 호가단위 등)
 ├── reports/           # 성과 리포트 + 차트
-├── tests/             # pytest 유닛 테스트 (53개)
+├── tests/             # pytest 유닛 테스트 (78개)
 ├── scheduler.py       # APScheduler 오케스트레이션
 ├── dashboard.py       # FastAPI 웹 대시보드
 ├── notifier.py        # Telegram 알림
@@ -217,11 +217,12 @@ python run_backtest.py [--strategy all|kr_gem|dual_momentum|vaa|risk_parity]
 ## 테스트
 
 ```bash
-# 전체 유닛 테스트 (53개)
+# 전체 유닛 테스트 (78개)
 python -m pytest tests/ -v
 
 # 특정 모듈만 테스트
 python -m pytest tests/test_strategies.py -v
+python -m pytest tests/test_rebalancer.py -v
 python -m pytest tests/test_metrics.py -v
 python -m pytest tests/test_risk_guard.py -v
 
