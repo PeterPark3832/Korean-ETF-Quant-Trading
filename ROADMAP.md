@@ -16,7 +16,7 @@ Korean ETF Quant Trading Bot의 향후 개발 계획입니다.
 - [x] FastAPI 웹 대시보드 + 비밀번호 토큰 인증(`DASHBOARD_SECRET`) + 수동 리밸런싱 버튼
 - [x] KIS 토큰 캐시 보안 강화 (원자적 쓰기·`chmod 0600`·Content-Type 검증)
 - [x] 리스크 관리 (MDD, 일간손실, 연속손실, 출금 방어)
-- [x] 유닛 테스트 103개 (strategy, rebalancer, metrics, risk_guard, backtest_engine, utils, run_bot, paper_broker)
+- [x] 유닛 테스트 123개 (strategy, rebalancer, metrics, risk_guard, backtest_engine, utils, run_bot, paper_broker, factor_engine)
 - [x] kr_gem 전략 테스트 (기본 전략 채택과 동시에 누락됐던 갭 해소)
 - [x] CI 파이프라인 (GitHub Actions, Python 3.10/3.11 매트릭스)
 - [x] KIS 재시도 로직 통합 (`_request_with_retry`)
@@ -38,7 +38,7 @@ Korean ETF Quant Trading Bot의 향후 개발 계획입니다.
 - [ ] 브로커 프로토콜 클래스 도입 (`typing.Protocol`로 `get_balance`, `order_buy`, `order_sell` 정의)
 - [ ] `config.py` 사이드이펙트 제거 (디렉터리 생성을 lazy init으로 이동)
 - [ ] 전략 파라미터 민감도 분석 스크립트 추가
-- [ ] `factor_engine.py` 미완성 Phase 4 로직 완성 및 통합 테스트
+- [x] `factor_engine.py` Phase 4 로직 단위 테스트 + MultiStrategy 통합 테스트
 
 ### 운영 안정성
 - [ ] KIS API 일일 요청 횟수 모니터링 추가
