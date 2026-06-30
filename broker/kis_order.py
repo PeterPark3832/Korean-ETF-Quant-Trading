@@ -253,9 +253,13 @@ class KISOrderManager:
             
         total_eval     = float(summary.get("tot_evlu_amt", 0))
         total_purchase = float(summary.get("pchs_amt_smtl_amt", 0))
-        
-        # 총 자산도 D+2 현금 기준으로 다시 계산
-        total_assets   = total_eval + cash_d2 
+
+        # 총 자산 = 보유 유가증권 평가액 + D+2 예수금.
+        # 주의: tot_evlu_amt(총평가금액)는 이미 예수금을 포함하므로, 여기에 cash_d2를
+        # 또 더하면 현금이 이중 계상되어 총자산이 부풀려진다(예: 300만 → 400만). 따라서
+        # 평가액은 tot_evlu_amt가 아니라 보유종목 평가액 합계(scts_evlu)를 사용한다.
+        securities_eval = sum(h.eval_amount for h in holdings)
+        total_assets    = securities_eval + cash_d2
         total_pnl      = float(summary.get("evlu_pfls_smtl_amt", 0))
         total_pnl_rate = (total_pnl / total_purchase * 100) if total_purchase > 0 else 0
 
